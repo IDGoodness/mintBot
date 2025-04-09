@@ -5,7 +5,7 @@ import Footer from './components/Footer';
 const NFTMintSite: React.FC = () => {
   return (
     <div className="flex flex-col min-h-screen font-sans bg-gradient-to-br from-gray-900 to-indigo-900">
-      <div className="flex flex-col lg:flex-row flex-grow">
+      <div className="flex flex-col lg:flex-row flex-grow md:mx-28">
         
         {/* Left Section */}
         <div className="flex-1 p-8 flex flex-col justify-center">
@@ -19,7 +19,7 @@ const NFTMintSite: React.FC = () => {
               NFT Minting Site
             </h1>
             <p className="mb-6">
-            Lorem ipsum dolor sit, amet consectetur adipisicing elit. Dignissimos reprehenderit voluptas ut magni. Ducimus sunt cumque, id tempora voluptas voluptate explicabo quidem nisi qui sed quod expedita nesciunt reprehenderit eveniet!
+              Lorem ipsum dolor sit, amet consectetur adipisicing elit. Dignissimos reprehenderit voluptas ut magni. Ducimus sunt cumque, id tempora voluptas voluptate explicabo quidem nisi qui sed quod expedita nesciunt reprehenderit eveniet!
             </p>
             <p className="text-sm text-gray-300">
               Lorem ipsum dolor, sit amet consectetur adipisicing elit. Beatae veritatis ad quis quibusdam, dolore earum dignissimos voluptate illo unde aliquid corporis voluptates eaque nemo dolores soluta, qui totam quasi. Soluta.
