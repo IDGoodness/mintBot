@@ -18,10 +18,7 @@ function App() {
       {!walletAddress ? (
         <NFTMintSite onConnect={handleWalletConnect} />
       ) : (
-        <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-6">
-          <h1 className="text-5xl font-bold mb-6">mintBot</h1>
           <DashboardPanel status={status} contractAddress={contractAddress} />
-        </div>
       )}
     </>
   );
