@@ -1,5 +1,6 @@
 // DashboardPanel.tsx
 import React, { useState, useEffect } from 'react';
+import logo from "../assets/logo-remove.png";
 
 interface DashboardPanelProps {
   status: string;
@@ -19,11 +20,14 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-[#1E2761] via-[#408EC6] to-[#7A2048] text-white p-6">
       {/* Title */}
-      <h1 className="text-5xl font-bold mb-6">mintBot</h1>
+      <div className="flex items-center justify-center mb-4">
+        <img src={logo} alt="Logo" className="w-28 " />
+        <h1 className="text-4xl font-bold">MintworX</h1>
+      </div>
 
       {/* Main Panel */}
       <div className="w-full max-w-4xl p-6 bg-gray-900 rounded-lg border border-gray-700">
-        <h2 className="text-2xl font-semibold mb-4">Dashboard Panel</h2>
+        {/* <h2 className="text-2xl font-semibold mb-4">Dashboard Panel</h2> */}
 
         {/* Contract Address Input */}
         <input
