@@ -53,7 +53,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         {/* max gas fee display */}
         <div className="mb-4">
           <h3 className="text-lg font-semibold text-gray-800">Max Gas Fee (100%)</h3>
-          <p>{baseGasFee} ETH</p>
+          <p className="text-3xl font-bold text-gray-800 flex items-center justify-center mb-4">{baseGasFee} ETH</p>
         </div>
 
         {/* gas fee slider */}

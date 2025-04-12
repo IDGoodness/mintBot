@@ -54,21 +54,22 @@ const ConfirmationPage: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-[#1E2761] via-[#408EC6] to-[#7A2048] text-white p-6">
-      <div className="w-full max-w-4xl p-6 bg-gray-900 rounded-lg border border-gray-700">
-        <h2 className="text-2xl font-semibold mb-4">Confirmation</h2>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-[#1E2761] via-[#408EC6] to-[#7A2048] text-black p-6">
+      <div className="w-full max-w-4xl p-11 bg-gray-100 rounded-lg border border-gray-300">
+        <h2 className="text-4xl font-semibold mb-4 flex items-center justify-center">Confirmation</h2>
 
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold">Gas Fee Summary</h3>
-          <p>Percentage Selected: {gasFeePercentage}%</p>
-          <p>ETH Cost: {ethCost.toFixed(6)} ETH</p>
-          <p>Transaction Fee: 0.0001 ETH</p>
-          <div className="mt-4 text-xl font-bold">Total Cost: {totalCost.toFixed(6)} ETH</div>
+        <div className="mb-4 text-center">
+          <h3 className="text-2xl font-semibold mb-2">Gas Fee Summary</h3>
+          <p className="text-xl">Percentage Selected: {gasFeePercentage}%</p>
+          <p className="text-xl">ETH Cost: {ethCost.toFixed(6)} ETH</p>
+          <p className="text-xl">Transaction Fee: 0.0001 ETH</p>
+          <div className="mt-4 text-3xl font-bold flex items-center justify-center mb-4">Total Cost: {totalCost.toFixed(6)} ETH</div>
         </div>
 
         <button
           onClick={handleConfirm}
-          className="bg-indigo-600 text-white py-2 px-4 rounded hover:bg-indigo-700 transition w-full"
+          className="block mx-auto bg-indigo-600 text-white py-3 px-5 rounded-full shadow-xl transform transition duration-300 ease-in-out hover:-translate-y-1 hover:bg-indigo-700 active:shadow-inner"
+
         >
           Confirm Transaction
         </button>
