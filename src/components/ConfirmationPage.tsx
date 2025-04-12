@@ -20,29 +20,64 @@ const ConfirmationPage: React.FC = () => {
         alert('Please install MetaMask!');
         return;
       }
-
+  
+      const sepoliaChainId = '0xaa36a7'; // Sepolia chain ID
+  
+      // Check current network
+      const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+  
+      // If not Sepolia, try switching
+      if (currentChainId !== sepoliaChainId) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: sepoliaChainId }],
+          });
+        } catch (switchError: any) {
+          // If the network isn't added in MetaMask
+          if (switchError.code === 4902) {
+            try {
+              await window.ethereum.request({
+                method: 'wallet_addEthereumChain',
+                params: [
+                  {
+                    chainId: sepoliaChainId,
+                    chainName: 'Sepolia Test Network',
+                    nativeCurrency: {
+                      name: 'SepoliaETH',
+                      symbol: 'ETH',
+                      decimals: 18,
+                    },
+                    rpcUrls: ['https://rpc.sepolia.org'],
+                    blockExplorerUrls: ['https://sepolia.etherscan.io'],
+                  },
+                ],
+              });
+            } catch (addError) {
+              alert('Failed to add Sepolia network. Please do it manually in MetaMask.');
+              return;
+            }
+          } else {
+            alert('Please switch to Sepolia network in MetaMask.');
+            return;
+          }
+        }
+      }
+  
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-
-      // Convert total cost to wei (smallest unit) for transaction
+  
+      const receiverAddress = '0xD52077C454BD1F5aAc87dbD0ffd27CAd163e9A31';
       const totalCostInWei = ethers.parseUnits(totalCost.toFixed(18), 'ether');
-
-      // Address that will receive the ETH (your platform address)
-      const receiverAddress = '0xD52077C454BD1F5aAc87dbD0ffd27CAd163e9A31'; // Change this
-
-      // Send the total cost
+  
       const tx = await signer.sendTransaction({
         to: receiverAddress,
         value: totalCostInWei,
       });
-
-      console.log('Transaction Sent:', tx); // Log the transaction object for debugging
-
-      // Wait for confirmation (transaction mining)
+  
       const receipt = await tx.wait();
-
+  
       if (receipt && receipt.status === 1) {
-        // Transaction successful
         navigate('/success', { state: { status: 'success' } });
       } else {
         throw new Error('Transaction failed');
