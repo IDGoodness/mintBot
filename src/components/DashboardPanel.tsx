@@ -1,6 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logo from "../assets/logo-remove.png";
+import { isAddress } from 'ethers';
+import { Contract, JsonRpcProvider } from 'ethers';
+
+
 
 interface DashboardPanelProps {
   status: string;
@@ -8,22 +12,52 @@ interface DashboardPanelProps {
   walletAddress: string;
 }
 
-const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress, walletAddress }) => {
-  const [address, setAddress] = useState(contractAddress);
+const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, walletAddress }) => {
+  // const [address, setAddress] = useState(contractAddress);
   const [gasFee, setGasFee] = useState(100);
+  const [contractAddress, setContractAddress] = useState('');
+  const [contractDetails, setContractDetails] = useState<any>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const baseGasFee = 0.01;
   const adjustedGasFee = (baseGasFee * gasFee) / 100;
   const navigate = useNavigate();
 
-  useEffect(() => {
-    setAddress(contractAddress);
-  }, [contractAddress]);
+  // useEffect(() => {
+  //   setAddress(contractAddress);
+  // }, [contractAddress]);
 
   const handleConfirm = () => {
     navigate('/confirmation', {
       state: { gasFeePercentage: gasFee, ethCost: adjustedGasFee },
     });
   };
+
+  const fetchContractDetails = async () => {
+  if (!isAddress(contractAddress)) {
+    setError('Invalid contract address');
+    setContractDetails(null);
+    return;
+  }
+
+  try {
+    setLoading(true);
+    setError('');
+    const provider = new JsonRpcProvider("https://mainnet.infura.io/v3/54701cf0c3ca4568b7b9cde638a4cf52"); // Replace with actual RPC
+    const abi = [ "function name() view returns (string)", "function symbol() view returns (string)" ];
+    const contract = new Contract(contractAddress, abi, provider);
+    const name = await contract.name();
+    const symbol = await contract.symbol();
+
+    setContractDetails({ name, symbol });
+  } catch (err) {
+    setError('Failed to fetch contract details');
+    setContractDetails(null);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#0f172a] overflow-hidden text-white p-6">
@@ -47,15 +81,32 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
           <p className="text-sm text-white/60">{walletAddress}</p>
         </div>
 
-        {/* Contract Address Input */}
-        <input
-          type="text"
-          className="text-sm font-mono bg-white/20 text-white p-4 rounded-xl w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-white/60"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder="Enter smart contract address"
-        />
+        {/* Contract Address Input and Display */}
+        <div className="my-4" >
+          <input
+            type="text"
+            className="text-sm font-mono bg-white/20 text-white p-4 rounded-xl w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-white/60"
+            value={contractAddress}
+            onChange={(e) => setContractAddress(e.target.value)}
+            placeholder="Enter smart contract address"
+          />
 
+          <button
+            onClick={fetchContractDetails}
+            className="mt-2  text-white px-4 py-2 rounded-2xl bg-indigo-600 hover:bg-indigo-700 transition-all shadow-xl "
+          >
+            {loading ? 'Fetching...' : 'Fetch Details'}
+          </button>
+
+          {error && <p className="text-red-500 mt-2">{error}</p>}
+
+          {contractDetails && (
+            <div className="mt-4 p-4 bg-gray-100 rounded shadow transition-all">
+              <p><strong>Name:</strong> {contractDetails.name}</p>
+              <p><strong>Symbol:</strong> {contractDetails.symbol}</p>
+            </div>
+          )}
+        </div>
         {/* Gas Fee Details */}
         <div className="mb-4">
           <h3 className="text-lg font-semibold text-white/80">Max Gas Fee (100%)</h3>
@@ -88,7 +139,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         {/* Confirm Button */}
         <button
           onClick={handleConfirm}
-          className="w-full py-3 px-4 rounded-full text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-xl text-lg font-semibold"
+          className="w-full py-3 px-4 rounded-2xl text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-xl text-lg font-semibold"
         >
           Confirm & Proceed
         </button>
