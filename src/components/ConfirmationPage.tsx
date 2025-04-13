@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ethers } from 'ethers';
 
 const ConfirmationPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const { gasFeePercentage, ethCost } = location.state || {
     gasFeePercentage: 0,
@@ -15,6 +16,9 @@ const ConfirmationPage: React.FC = () => {
   const totalCost = ethCost + transactionFee;
 
   const handleConfirm = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+
     try {
       if (!window.ethereum) {
         alert('Please install MetaMask!');
@@ -22,7 +26,6 @@ const ConfirmationPage: React.FC = () => {
       }
 
       const sepoliaChainId = '0xaa36a7';
-
       const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
 
       if (currentChainId !== sepoliaChainId) {
@@ -82,6 +85,8 @@ const ConfirmationPage: React.FC = () => {
     } catch (err) {
       console.error('Transaction failed:', err);
       alert('Transaction failed. Please try again.');
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -101,8 +106,7 @@ const ConfirmationPage: React.FC = () => {
           <div className="bg-white/20 backdrop-blur-md p-4 rounded-xl shadow-inner">
             <p className="text-xl">Gas Fee Percentage: <span className="font-bold">{gasFeePercentage}%</span></p>
           </div>
-          <div className="bg-white/20 backdrop-blur-md p-4 rounded-xl shadow-inner">
-            <p className="text-xl">ETH Cost: <span className="font-bold">{ethCost.toFixed(6)} ETH</span></p>
+          <div className="bg-white/20 backdrop-blur-md p-4 rounded-xl shadow-inner"><p className="text-xl">ETH Cost: <span className="font-bold">{ethCost.toFixed(6)} ETH</span></p>
           </div>
           <div className="bg-white/20 backdrop-blur-md p-4 rounded-xl shadow-inner">
             <p className="text-xl">Transaction Fee: <span className="font-bold">0.0001 ETH</span></p>
@@ -115,9 +119,15 @@ const ConfirmationPage: React.FC = () => {
         <div className="mt-8 flex justify-center">
           <button
             onClick={handleConfirm}
-            className="bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white py-3 px-6 rounded-full shadow-xl transition duration-300 ease-in-out text-xl font-semibold"
+            disabled={isProcessing}
+            className={`flex items-center justify-center gap-2 ${
+              isProcessing ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+            } active:scale-95 text-white py-3 px-6 rounded-full shadow-xl transition duration-300 ease-in-out text-xl font-semibold`}
           >
-            Confirm
+            {isProcessing && (
+              <div className="w-5 h-5 border-4 border-white border-t-transparent rounded-full animate-spin" />
+            )}
+            {isProcessing ? 'Processing...' : 'Confirm'}
           </button>
         </div>
       </div>
