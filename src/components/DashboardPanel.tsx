@@ -10,9 +10,9 @@ interface DashboardPanelProps {
 
 const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress, walletAddress }) => {
   const [address, setAddress] = useState(contractAddress);
-  const [gasFee, setGasFee] = useState(100); // Default to 100%
-  const baseGasFee = 0.01; // Static base gas fee (100% is 0.01 ETH)
-  const adjustedGasFee = (baseGasFee * gasFee) / 100; // Adjusted gas fee based on slider percentage
+  const [gasFee, setGasFee] = useState(100);
+  const baseGasFee = 0.01;
+  const adjustedGasFee = (baseGasFee * gasFee) / 100;
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -26,39 +26,47 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-[#1E2761] via-[#408EC6] to-[#7A2048] text-white p-6">
-      {/* Title */}
-      <div className="flex items-center justify-center mb-4">
-        <img src={logo} alt="Logo" className="w-28" />
-        <h1 className="text-4xl font-bold">MintworX</h1>
+    <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#0f172a] overflow-hidden text-white p-6">
+      {/* Glowing background orbs */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute top-[-100px] left-[-100px] w-80 h-80 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse" />
+        <div className="absolute bottom-[-100px] right-[-100px] w-80 h-80 bg-indigo-500 rounded-full mix-blend-multiply filter blur-2xl opacity-40 animate-pulse delay-200" />
       </div>
 
-      {/* Main Panel */}
-      <div className="w-full max-w-4xl p-6 bg-[#f5f5f5] rounded-3xl shadow-xl neumorphism backdrop-blur-md">
-        {/* Wallet address display */}
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold text-gray-800">Connected Wallet</h3>
-          <p className="text-sm text-gray-600">{walletAddress}</p>
+      {/* Content */}
+      <div className="relative z-10 w-full max-w-4xl p-8 bg-white/10 text-white rounded-3xl shadow-2xl backdrop-blur-md border border-white/20">
+        {/* Logo and Title */}
+        <div className="flex flex-col items-center justify-center mb-6">
+          <img src={logo} alt="Logo" className="w-24 mb-2" />
+          <h1 className="text-4xl font-extrabold tracking-wide">MintworX</h1>
         </div>
 
-        {/* CA Input */}
+        {/* Wallet Info */}
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-white/80">Connected Wallet</h3>
+          <p className="text-sm text-white/60">{walletAddress}</p>
+        </div>
+
+        {/* Contract Address Input */}
         <input
           type="text"
-          className="font-mono text-sm bg-[#e0e0e0] p-4 rounded-lg w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-600 text-gray-800 neumorphism"
+          className="text-sm font-mono bg-white/20 text-white p-4 rounded-xl w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-white/60"
           value={address}
           onChange={(e) => setAddress(e.target.value)}
           placeholder="Enter smart contract address"
         />
 
-        {/* max gas fee display */}
+        {/* Gas Fee Details */}
         <div className="mb-4">
-          <h3 className="text-lg font-semibold text-gray-800">Max Gas Fee (100%)</h3>
-          <p className="text-3xl font-bold text-gray-800 flex items-center justify-center mb-4">{baseGasFee} ETH</p>
+          <h3 className="text-lg font-semibold text-white/80">Max Gas Fee (100%)</h3>
+          <p className="text-3xl font-bold text-white text-center">{baseGasFee} ETH</p>
         </div>
 
-        {/* gas fee slider */}
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Preferred Gas Fee Range (0% - 100%)</label>
+        {/* Slider */}
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-white/70 mb-1">
+            Preferred Gas Fee Range (0% - 100%)
+          </label>
           <input
             type="range"
             min="0"
@@ -66,27 +74,27 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
             step="1"
             value={gasFee}
             onChange={(e) => setGasFee(Number(e.target.value))}
-            className="w-full h-2 bg-[#d0d0d0] rounded-lg appearance-none cursor-pointer neumorphism"
+            className="w-full h-2 bg-white/30 rounded-lg appearance-none cursor-pointer"
           />
-          <div className="flex justify-between text-xs text-gray-500 mt-1">
+          <div className="flex justify-between text-xs text-white/60 mt-1">
             <span>0% Base Fee</span>
             <span>100% Max Sniping Fee</span>
           </div>
-          <div className="mt-2 text-center text-sm text-gray-700">
-            Selected: {gasFee}% = {adjustedGasFee.toFixed(6)} ETH
+          <div className="mt-2 text-center text-white/80 text-sm">
+            Selected: <span className="font-bold">{gasFee}%</span> = {adjustedGasFee.toFixed(6)} ETH
           </div>
         </div>
 
-        {/* Confirm button */}
+        {/* Confirm Button */}
         <button
           onClick={handleConfirm}
-          className="bg-[#6c63ff] text-white py-2 px-4 rounded-xl hover:bg-[#5a52e5] focus:ring-4 focus:ring-[#6c63ff] transition w-full neumorphism"
+          className="w-full py-3 px-4 rounded-full text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-xl text-lg font-semibold"
         >
           Confirm & Proceed
         </button>
 
-        {/* Status Message */}
-        <div className="mt-4 text-sm text-blue-400">
+        {/* Status */}
+        <div className="mt-4 text-sm text-blue-400 text-center">
           Status: {status}
         </div>
       </div>

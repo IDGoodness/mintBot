@@ -6,44 +6,66 @@ const SuccessPage: React.FC = () => {
   const { status } = location.state || { status: 'Unknown' };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-[#1E2761] via-[#408EC6] to-[#7A2048] text-black p-6">
-      <div className="w-full max-w-4xl p-6 bg-gray-100 rounded-lg border border-gray-300 flex flex-col items-center">
-        {/* Animated Checkmark */}
-        <svg className="checkmark mb-4" viewBox="0 0 52 52">
-          <circle className="checkmark__circle" cx="26" cy="26" r="25" fill="none" />
-          <path className="checkmark__check" fill="none" d="M14 27l7 7 16-16" />
-        </svg>
-
-        <h2 className="text-3xl font-semibold mb-4">Transaction {status}</h2>
-        <p className="text-lg">Your transaction has been successfully completed!</p>
+    <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#0f172a] overflow-hidden text-white p-6">
+      {/* Glowing orbs */}
+      <div className="absolute inset-0 z-0">
+        <div className="absolute top-[-100px] left-[-100px] w-80 h-80 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse" />
+        <div className="absolute bottom-[-100px] right-[-100px] w-80 h-80 bg-indigo-500 rounded-full mix-blend-multiply filter blur-2xl opacity-40 animate-pulse delay-200" />
       </div>
 
-      {/* checkmark animation */}
+      {/* Content */}
+      <div className="relative z-10 w-full max-w-2xl p-8 bg-white/10 text-white rounded-3xl shadow-2xl backdrop-blur-md border border-white/20 flex flex-col items-center">
+        <div className="success-animation mb-6">
+          <svg className="animated-check" viewBox="0 0 70 70">
+            <circle className="path circle" cx="35" cy="35" r="30" />
+            <polyline className="path check" points="23,34 34,45 49,27" />
+          </svg>
+        </div>
+
+        <h2 className="text-4xl font-bold mb-4">Transaction {status}</h2>
+        <p className="text-lg text-white/80 text-center">
+          Your transaction has been successfully completed!
+        </p>
+      </div>
+
       <style>{`
-        .checkmark {
-          width: 72px;
-          height: 72px;
+        .success-animation {
+          display: inline-block;
         }
-        .checkmark__circle {
-          stroke-dasharray: 166;
-          stroke-dashoffset: 166;
-          stroke-width: 2;
-          stroke-miterlimit: 10;
-          stroke: #4CAF50;
+
+        .animated-check {
+          width: 96px;
+          height: 96px;
+        }
+
+        .path {
           fill: none;
-          animation: stroke 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
-        }
-        .checkmark__check {
-          transform-origin: 50% 50%;
-          stroke-dasharray: 48;
-          stroke-dashoffset: 48;
-          stroke: #4CAF50;
-          stroke-width: 2;
+          stroke: #4caf50;
+          stroke-width: 5;
           stroke-linecap: round;
-          animation: stroke 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.6s forwards;
+          stroke-linejoin: round;
         }
-        @keyframes stroke {
-          100% {
+
+        .circle {
+          stroke-dasharray: 190;
+          stroke-dashoffset: 190;
+          animation: drawCircle 0.8s ease-out forwards;
+        }
+
+        .check {
+          stroke-dasharray: 50;
+          stroke-dashoffset: 50;
+          animation: drawCheck 0.5s ease-out 0.8s forwards;
+        }
+
+        @keyframes drawCircle {
+          to {
+            stroke-dashoffset: 0;
+          }
+        }
+
+        @keyframes drawCheck {
+          to {
             stroke-dashoffset: 0;
           }
         }
