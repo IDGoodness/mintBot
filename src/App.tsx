@@ -3,7 +3,13 @@ import { useState } from 'react';
 import NFTMintSite from './NFTMintSite.tsx';
 import DashboardPanel from './components/DashboardPanel';
 import ConfirmationPage from './components/ConfirmationPage';
-import SuccessPage from './components/SuccessPage'; // Create this component
+import SuccessPage from './components/SuccessPage';
+
+import { WagmiProvider } from 'wagmi';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { config } from './wagmiConfig';
+
+const queryClient = new QueryClient();
 
 function App() {
   const [walletAddress, setWalletAddress] = useState('');
@@ -17,26 +23,30 @@ function App() {
   const contractAddress = import.meta.env.VITE_CONTRACT_ADDRESS || '0x...';
 
   return (
-    <Router>
-      <Routes>
-        <Route
-          path="/"
-          element={
-            !walletAddress ? (
-              <NFTMintSite onConnect={handleWalletConnect} />
-            ) : (
-              <DashboardPanel
-                status={status}
-                contractAddress={contractAddress}
-                walletAddress={walletAddress}  // Pass walletAddress here
-              />
-            )
-          }
-        />
-        <Route path="/confirmation" element={<ConfirmationPage />} />
-        <Route path="/success" element={<SuccessPage />} /> {/* Added SuccessPage route */}
-      </Routes>
-    </Router>
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                !walletAddress ? (
+                  <NFTMintSite onConnect={handleWalletConnect} />
+                ) : (
+                  <DashboardPanel
+                    status={status}
+                    contractAddress={contractAddress}
+                    walletAddress={walletAddress}
+                  />
+                )
+              }
+            />
+            <Route path="/confirmation" element={<ConfirmationPage />} />
+            <Route path="/success" element={<SuccessPage />} />
+          </Routes>
+        </Router>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }
 
