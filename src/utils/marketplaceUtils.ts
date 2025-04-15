@@ -1,43 +1,52 @@
 // utils/marketplaceUtils.ts
 
-const OPENSEA_API_KEY = 'YOUR_OPENSEA_API_KEY';
+const OPENSEA_API_KEY = import.meta.env.VITE_OPENSEA_API_KEY;
 
+/**
+ * Fetch NFTs from OpenSea (Ethereum)
+ */
 export const fetchNFTsFromOpenSea = async (contractAddress: string) => {
   try {
-    const response = await fetch(`https://api.opensea.io/api/v2/chain/ethereum/contract/${contractAddress}/nfts`, {
-      headers: {
-        'X-API-KEY': OPENSEA_API_KEY
+    const response = await fetch(
+      `https://api.opensea.io/api/v2/chain/ethereum/contract/${contractAddress}/nfts`,
+      {
+        headers: {
+          'accept': 'application/json',
+          'x-api-key': OPENSEA_API_KEY,
+        },
       }
-    });
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        `OpenSea API error (${response.status}): ${errorData?.detail || response.statusText}`
+      );
+    }
+
     const data = await response.json();
     return data.nfts || [];
   } catch (err) {
-    console.error('OpenSea error', err);
+    console.error('OpenSea error:', err);
     return [];
   }
 };
 
-export const fetchNFTsFromMagicEden = async (contractAddress: string) => {
+
+export const fetchUpcomingCollectionsFromMagicEden = async ( contractAddress: string ) => {
+  const url = contractAddress
+    ? `http://localhost:5000/api/magiceden/upcoming?contract=${contractAddress}`
+    : `http://localhost:5000/api/magiceden/upcoming`;
+
   try {
-    // Adjust endpoint based on Magic Eden's EVM support
-    const response = await fetch(`https://api-mainnet.magiceden.io/v2/evm/collections/${contractAddress}`);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Magic Eden API error (${response.status}): ${response.statusText}`);
+    }
     const data = await response.json();
-    return data.nfts || [];
-  } catch (err) {
-    console.error('Magic Eden error', err);
+    return data;
+  } catch (error) {
+    console.error('Error fetching upcoming collections from Magic Eden:', error);
     return [];
   }
 };
-  
-  export const fetchNFTsFromMintify = async (contractAddress: string) => {
-    try {
-      // Replace with actual Mintify endpoint and API key if needed
-      const response = await fetch(`https://api.mintify.xyz/contracts/${contractAddress}`);
-      const data = await response.json();
-      return data.nfts || [];
-    } catch (err) {
-      console.error('Mintify error', err);
-      return [];
-    }
-  };
-  

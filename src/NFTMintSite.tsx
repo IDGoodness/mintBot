@@ -50,14 +50,14 @@ const NFTMintSite: React.FC<NFTMintSiteProps> = ({ onConnect }) => {
           transition={{ duration: 2.0 }}
         >
           <div className="max-w-md text-white">
-            <div className="flex items-center justify-center mb-4">
-              <img src={logo} alt="Logo" className="w-28 mr-4 " />
-              <h1 className="text-4xl font-bold">MintworX</h1>
+            <div className="flex items-center mb-4">
+              <img src={logo} alt="MintworX Logo" className="w-28" />
+              <h1 className="text-4xl font-bold text-white text-center">MintworX</h1>
             </div>
-            <p className="mb-6">
+            <p className="mb-6 text-center md:text-left ">
               Revolutionalize minting processes with our exclusive Mint-Bot
             </p>
-            <p className="text-sm text-gray-300">
+            <p className="text-sm text-gray-300 text-center md:text-left ">
               MintworX combines the excitement of NFT art with practical utility. Our NFTs are your exclusive key to the Mint Bot, a powerful tool for minting NFTs from top launchpads with precision.
             </p>
           </div>

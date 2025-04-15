@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logo from "../assets/logo-remove.png";
-import { useAccount } from 'wagmi';
-import { getEthNFTs, getBeraNFTs } from '../utils/fetchNFTs';
+// import { useAccount } from 'wagmi';
 import NFTCard from './NFTCard';
 import {
   fetchNFTsFromOpenSea,
-  fetchNFTsFromMagicEden,
-  fetchNFTsFromMintify,
+  fetchUpcomingCollectionsFromMagicEden
 } from '../utils/marketplaceUtils';
 
 interface DashboardPanelProps {
@@ -17,90 +15,67 @@ interface DashboardPanelProps {
 }
 
 const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress, walletAddress }) => {
-  const { isConnected } = useAccount();
+  // const { isConnected } = useAccount();
   const navigate = useNavigate();
 
   const [address, setAddress] = useState(contractAddress || '');
-  const [chain, setChain] = useState<'ethereum' | 'berachain'>('ethereum');
   const [inputValue, setInputValue] = useState('');
   const [nfts, setNfts] = useState<any[]>([]);
+  const [nftError, setNftError] = useState<string | null>(null);
   const [loadingNfts, setLoadingNfts] = useState(false);
-  const [tokenInfo, setTokenInfo] = useState<any>(null);
-  const [loadingTokenInfo, setLoadingTokenInfo] = useState(false);
-  const [gasFee, setGasFee] = useState(100);
-  const baseGasFee = 0.01;
-  const adjustedGasFee = (baseGasFee * gasFee) / 100;
+  const [gasFee, setGasFee] = useState(1000);
+  const baseGasFee = 0.1;
+  const adjustedGasFee = (baseGasFee * gasFee) / 1000;
 
   const shortenAddress = (addr: string) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 
-  const handleChainChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setChain(e.target.value as 'ethereum' | 'berachain');
-  };
+  const fetchNFTs = async () => {
+    const selected = inputValue || walletAddress || address;
 
-  const fetchTokenInfo = async (ca: string) => {
-    setLoadingTokenInfo(true);
-    try {
-      const res = await fetch(`https://api.dexscreener.com/latest/dex/search/?q=${ca}`);
-      const data = await res.json();
-      setTokenInfo(data?.pairs?.[0] || null);
-    } catch {
-      setTokenInfo(null);
-    } finally {
-      setLoadingTokenInfo(false);
+    // Reset previous state
+    setNftError(null);
+    setNfts([]);
+
+    if (!selected || selected.length !== 42 || !selected.startsWith('0x')) {
+      setNftError("Please enter a valid Ethereum address.");
+      return;
     }
-  };
-
-  const fetchNFTsFromEtherscan = async (wallet: string) => {
-    const apiKey = 'P42CB5CQI8F6V4BH3WCSDRM2IY2WHXI7DI';
-    const url = `https://api.etherscan.io/api?module=account&action=tokennfttx&address=${wallet}&page=1&offset=10&apikey=${apiKey}`;
 
     setLoadingNfts(true);
     try {
-      const res = await fetch(url);
-      const data = await res.json();
-      const nftData = data?.result?.map((tx: any) => ({
-        tokenId: tx.tokenID,
-        tokenName: tx.tokenName,
-        tokenSymbol: tx.tokenSymbol,
-        from: tx.from,
-        to: tx.to,
-      })) || [];
-      setNfts(nftData);
-    } catch (err) {
-      console.error('Error fetching from Etherscan', err);
+      const openseaNFTs = await fetchNFTsFromOpenSea(selected);
+      if (openseaNFTs.length === 0) {
+        setNftError("No NFTs found for this address.");
+      } else {
+        setNfts(openseaNFTs);
+      }
+    } catch (err: any) {
+      console.error('Error fetching NFTs from OpenSea:', err);
+      setNftError("Failed to fetch NFTs. Please try again or check the address.");
+    } finally {
+      setLoadingNfts(false);
+    }
+  };
+
+  // fetch upcoming collections from Magic Eden
+  
+  const fetchUpcomingCollections = async () => {
+    const selected = inputValue || walletAddress || address;
+
+    setLoadingNfts(true);
+    try {
+      const collections = await fetchUpcomingCollectionsFromMagicEden(selected);
+      setNfts(collections);
+    } catch (error) {
+      console.error('Error fetching upcoming collections:', error);
       setNfts([]);
     } finally {
       setLoadingNfts(false);
     }
   };
 
-  const fetchNFTs = async () => {
-    const selected = inputValue || walletAddress || address;
-    if (!selected) return;
 
-    setLoadingNfts(true);
-    try {
-      let fetchedNFTs: any[] = [];
-      const isContract = selected.length === 42 && selected.startsWith('0x');
 
-      if (isContract) {
-        const opensea = await fetchNFTsFromOpenSea(selected);
-        const magiceden = await fetchNFTsFromMagicEden(selected);
-        const mintify = await fetchNFTsFromMintify(selected);
-        fetchedNFTs = [...opensea, ...magiceden, ...mintify];
-      } else {
-        fetchedNFTs = chain === 'ethereum'
-          ? await getEthNFTs(selected)
-          : await getBeraNFTs(selected);
-      }
-
-      setNfts(fetchedNFTs);
-    } catch (err) {
-      console.error('Error fetching NFTs:', err);
-    } finally {
-      setLoadingNfts(false);
-    }
-  };
 
   const handleConfirm = () => {
     navigate('/confirmation', {
@@ -113,20 +88,6 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
     if (contractAddress) setAddress(contractAddress);
   }, [contractAddress]);
 
-  // Auto-fetch when address is updated
-  useEffect(() => {
-    if (address && address.length === 42) {
-      fetchTokenInfo(address);
-      fetchNFTsFromEtherscan(address);
-    }
-  }, [address]);
-
-  useEffect(() => {
-    if (isConnected && (walletAddress || address) && !inputValue) {
-      fetchNFTs();
-    }
-  }, [isConnected, chain]);
-
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#0f172a] overflow-hidden text-white p-6">
       {/* Glowing Orbs */}
@@ -138,7 +99,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
       <div className="relative z-10 w-full max-w-4xl p-8 bg-white/10 text-white rounded-3xl shadow-2xl backdrop-blur-md border border-white/20">
         {/* Header */}
         <div className="flex flex-col items-center mb-6">
-          <img src={logo} alt="Logo" className="w-28 h-28 object-contain rounded-xl mb-2" />
+          <img src={logo} alt="Logo" className="w-28 h-28 object-contain rounded-xl -mb-6" />
           <h1 className="text-4xl font-extrabold tracking-wide">MintworX</h1>
         </div>
 
@@ -158,52 +119,45 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         />
 
         <div className="flex gap-4 mb-4">
-          <select
-            value={chain}
-            onChange={handleChainChange}
-            className="px-4 py-2 border rounded-md bg-white/10 text-white"
-          >
-            <option value="ethereum">Ethereum</option>
-            <option value="berachain">Berachain</option>
-          </select>
           <button
             onClick={fetchNFTs}
-            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Load NFTs
           </button>
-        </div>
+          <button
+            onClick={fetchUpcomingCollections}
+            className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+          >
+            Load Upcoming Collections
+          </button>
 
-        {/* Token Info */}
-        {loadingTokenInfo ? (
-          <p className="text-sm text-indigo-300 mb-4">Loading token info...</p>
-        ) : tokenInfo ? (
-          <div className="bg-white/5 p-6 rounded-xl mb-4 border border-white/20">
-            <div className="grid sm:grid-cols-2 gap-4 text-sm">
-              <div><strong>Name:</strong> {tokenInfo.baseToken.name}</div>
-              <div><strong>Symbol:</strong> {tokenInfo.baseToken.symbol}</div>
-              <div><strong>Price (USD):</strong> ${parseFloat(tokenInfo.priceUsd).toFixed(6)}</div>
-              <div><strong>DEX:</strong> {tokenInfo.dexId}</div>
-              <div><strong>Liquidity:</strong> ${tokenInfo.liquidity?.usd?.toLocaleString()}</div>
-              <div><strong>Volume (24h):</strong> ${tokenInfo.volume?.h24?.toLocaleString()}</div>
-            </div>
-          </div>
-        ) : (
-          address && <p className="text-red-400 text-sm mb-4">No token info found.</p>
-        )}
+        </div>
 
         {/* NFT Display */}
         {loadingNfts ? (
           <p className="text-indigo-300">Loading NFTs...</p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-            {nfts.length > 0 ? (
+            {nftError ? (
+              <p className="text-red-400 col-span-full text-center">{nftError}</p>
+            ) : nfts.length > 0 ? (
               nfts.map((nft, idx) => <NFTCard key={idx} nft={nft} />)
             ) : (
-              <p className="text-gray-500 col-span-full text-center">No NFTs found</p>
+              !loadingNfts && <p className="text-gray-500 col-span-full text-center">No NFTs found</p>
             )}
           </div>
         )}
+
+        {/* Upcoming NFTs Dsiplay */}
+
+        {nfts.length > 0 ? (
+          nfts.map((collection, idx) => ( <NFTCard key={idx} nft={collection} />
+          ))
+        ) : (
+          <p className="text-gray-500 col-span-full text-center">No upcoming collections found</p>
+        )}
+
 
         {/* Gas Fee */}
         <div className="mb-4">
@@ -215,8 +169,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
           <label className="block text-sm font-medium text-white/70 mb-1">Preferred Gas Fee Range</label>
           <input
             type="range"
-            min="0"
-            max="100"
+            min="100"
+            max="1000"
             value={gasFee}
             onChange={(e) => setGasFee(Number(e.target.value))}
             className="w-full"
