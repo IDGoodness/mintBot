@@ -3,10 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import logo from "../assets/logo-remove.png";
 // import { useAccount } from 'wagmi';
 import NFTCard from './NFTCard';
-import {
-  fetchNFTsFromOpenSea,
-  fetchUpcomingCollectionsFromMagicEden
-} from '../utils/marketplaceUtils';
+ // Adjust the import path as necessary
+
 
 interface DashboardPanelProps {
   status: string;
@@ -24,58 +22,41 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
   const [nftError, setNftError] = useState<string | null>(null);
   const [loadingNfts, setLoadingNfts] = useState(false);
   const [gasFee, setGasFee] = useState(1000);
+
+ 
   const baseGasFee = 0.1;
   const adjustedGasFee = (baseGasFee * gasFee) / 1000;
 
   const shortenAddress = (addr: string) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 
-  const fetchNFTs = async () => {
-    const selected = inputValue || walletAddress || address;
+  
+  const fetchNFTDetails = async () => {
+    const contract = inputValue.trim().toLowerCase();
 
-    // Reset previous state
-    setNftError(null);
-    setNfts([]);
-
-    if (!selected || selected.length !== 42 || !selected.startsWith('0x')) {
-      setNftError("Please enter a valid Ethereum address.");
+    if (!contract || contract.length !== 42 || !contract.startsWith("0x")) {
+      setNftError("Please enter a valid Ethereum contract address.");
       return;
     }
 
     setLoadingNfts(true);
     try {
-      const openseaNFTs = await fetchNFTsFromOpenSea(selected);
-      if (openseaNFTs.length === 0) {
-        setNftError("No NFTs found for this address.");
+      const response = await fetch(`http://localhost:3001/api/upcoming/${contract}`);
+      const data = await response.json();
+
+      if (data?.name) {
+        setNfts([data]); // force as array to match existing rendering
+        setNftError(null);
       } else {
-        setNfts(openseaNFTs);
+        setNfts([]);
+        setNftError("No collection found for this contract.");
       }
-    } catch (err: any) {
-      console.error('Error fetching NFTs from OpenSea:', err);
-      setNftError("Failed to fetch NFTs. Please try again or check the address.");
+    } catch (err) {
+      console.error("Error fetching contract metadata:", err);
+      setNftError("Error fetching NFT details. Try again.");
     } finally {
       setLoadingNfts(false);
     }
   };
-
-  // fetch upcoming collections from Magic Eden
-  
-  const fetchUpcomingCollections = async () => {
-    const selected = inputValue || walletAddress || address;
-
-    setLoadingNfts(true);
-    try {
-      const collections = await fetchUpcomingCollectionsFromMagicEden(selected);
-      setNfts(collections);
-    } catch (error) {
-      console.error('Error fetching upcoming collections:', error);
-      setNfts([]);
-    } finally {
-      setLoadingNfts(false);
-    }
-  };
-
-
-
 
   const handleConfirm = () => {
     navigate('/confirmation', {
@@ -120,16 +101,10 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
 
         <div className="flex gap-4 mb-4">
           <button
-            onClick={fetchNFTs}
+            onClick={fetchNFTDetails}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Load NFTs
-          </button>
-          <button
-            onClick={fetchUpcomingCollections}
-            className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-          >
-            Load Upcoming Collections
           </button>
 
         </div>
@@ -151,12 +126,12 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
 
         {/* Upcoming NFTs Dsiplay */}
 
-        {nfts.length > 0 ? (
+        {/* {nfts.length > 0 ? (
           nfts.map((collection, idx) => ( <NFTCard key={idx} nft={collection} />
           ))
         ) : (
           <p className="text-gray-500 col-span-full text-center">No upcoming collections found</p>
-        )}
+        )} */}
 
 
         {/* Gas Fee */}
