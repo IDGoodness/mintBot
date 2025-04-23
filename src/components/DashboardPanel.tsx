@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import logo from "../assets/logo-remove.png";
 // import { useAccount } from 'wagmi';
 import NFTCard from './NFTCard';
- // Adjust the import path as necessary
-
+import useSniperConfig from '../hooks/useSniperConfig';
+import useListingWatcher from '../hooks/useListingWatcher';
 
 interface DashboardPanelProps {
   status: string;
@@ -22,10 +22,12 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
   const [nftError, setNftError] = useState<string | null>(null);
   const [loadingNfts, setLoadingNfts] = useState(false);
   const [gasFee, setGasFee] = useState(1000);
+  const { sniperConfig, setSniperConfig } = useSniperConfig();
 
  
   const baseGasFee = 0.1;
   const adjustedGasFee = (baseGasFee * gasFee) / 1000;
+  useListingWatcher(contractAddress, currentFloor, sniperConfig);
 
   const shortenAddress = (addr: string) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 
@@ -124,18 +126,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
           </div>
         )}
 
-        {/* Upcoming NFTs Dsiplay */}
-
-        {/* {nfts.length > 0 ? (
-          nfts.map((collection, idx) => ( <NFTCard key={idx} nft={collection} />
-          ))
-        ) : (
-          <p className="text-gray-500 col-span-full text-center">No upcoming collections found</p>
-        )} */}
-
-
         {/* Gas Fee */}
-        <div className="mb-4">
+        {/* <div className="mb-4">
           <h3 className="text-lg font-semibold text-white/80">Max Gas Fee (100%)</h3>
           <p className="text-3xl font-bold text-white text-center">{baseGasFee} ETH</p>
         </div>
@@ -153,7 +145,40 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
           <div className="text-sm text-center mt-2">
             {gasFee}% = {adjustedGasFee.toFixed(6)} ETH
           </div>
+        </div> */}
+
+        {/* Sniping Settings */}
+
+        <div className="mb-4 p-4 border rounded bg-gray-900">
+          <h3 className="text-white font-semibold mb-2">Sniping Settings</h3>
+
+          <label className="block text-sm text-gray-300 mb-1">
+            Sniping Threshold (% below floor):
+          </label>
+          <input
+            type="number"
+            value={sniperConfig.percentage}
+            onChange={(e) =>
+              setSniperConfig({ ...sniperConfig, percentage: parseFloat(e.target.value) })
+            }
+            className="w-full p-2 rounded bg-gray-800 text-white mb-3"
+            min="1"
+            max="100"
+          />
+
+          <label className="flex items-center gap-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={sniperConfig.isActive}
+              onChange={(e) =>
+                setSniperConfig({ ...sniperConfig, isActive: e.target.checked })
+              }
+              className="form-checkbox"
+            />
+            Activate Sniping
+          </label>
         </div>
+
 
         {/* Confirm */}
         <button
