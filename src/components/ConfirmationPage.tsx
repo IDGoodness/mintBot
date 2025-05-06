@@ -7,9 +7,10 @@ const ConfirmationPage: React.FC = () => {
   const navigate = useNavigate();
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const { gasFeePercentage, ethCost } = location.state || {
+  const { gasFeePercentage, ethCost, contractAddress } = location.state || {
     gasFeePercentage: 0,
     ethCost: 0,
+    contractAddress: ""
   };
 
   const transactionFee = 0.0001;
@@ -78,7 +79,13 @@ const ConfirmationPage: React.FC = () => {
       const receipt = await tx.wait();
 
       if (receipt && receipt.status === 1) {
-        navigate('/success', { state: { status: 'success' } });
+        navigate('/success', { 
+          state: { 
+            status: 'success',
+            contractAddress: contractAddress,
+            gasFeePercentage: gasFeePercentage
+          } 
+        });
       } else {
         throw new Error('Transaction failed');
       }
@@ -103,14 +110,24 @@ const ConfirmationPage: React.FC = () => {
         <h2 className="text-4xl font-extrabold text-center mb-6 tracking-wide">Confirm Transaction</h2>
 
         <div className="grid gap-4 text-center text-lg font-medium">
+          {contractAddress && (
+            <div className="bg-white/20 backdrop-blur-md p-4 rounded-xl shadow-inner">
+              <p className="text-xl">NFT Contract: <span className="font-mono text-sm">{contractAddress}</span></p>
+            </div>
+          )}
+          
           <div className="bg-white/20 backdrop-blur-md p-4 rounded-xl shadow-inner">
             <p className="text-xl">Gas Fee Percentage: <span className="font-bold">{gasFeePercentage}%</span></p>
           </div>
-          <div className="bg-white/20 backdrop-blur-md p-4 rounded-xl shadow-inner"><p className="text-xl">ETH Cost: <span className="font-bold">{ethCost.toFixed(6)} ETH</span></p>
+          
+          <div className="bg-white/20 backdrop-blur-md p-4 rounded-xl shadow-inner">
+            <p className="text-xl">ETH Cost: <span className="font-bold">{ethCost.toFixed(6)} ETH</span></p>
           </div>
+          
           <div className="bg-white/20 backdrop-blur-md p-4 rounded-xl shadow-inner">
             <p className="text-xl">Transaction Fee: <span className="font-bold">0.0001 ETH</span></p>
           </div>
+          
           <div className="bg-gradient-to-r from-green-400 to-blue-500 p-4 rounded-xl text-white text-2xl font-bold shadow-lg">
             Total Cost: {totalCost.toFixed(6)} ETH
           </div>
@@ -127,7 +144,7 @@ const ConfirmationPage: React.FC = () => {
             {isProcessing && (
               <div className="w-5 h-5 border-4 border-white border-t-transparent rounded-full animate-spin" />
             )}
-            {isProcessing ? 'Processing...' : 'Confirm'}
+            {isProcessing ? 'Processing...' : 'Confirm & Activate Bot'}
           </button>
         </div>
       </div>

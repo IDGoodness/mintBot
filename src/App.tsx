@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { useState } from 'react';
 import NFTMintSite from './NFTMintSite.tsx';
-import DashboardPanel from './components/DashboardPanel';
+import DashboardPanel from './DashboardPanel';
 import ConfirmationPage from './components/ConfirmationPage';
 import SuccessPage from './components/SuccessPage';
 
