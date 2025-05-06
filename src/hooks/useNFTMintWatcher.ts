@@ -60,13 +60,26 @@ const useNFTMintWatcher = (
   const etherscanLastTxCountRef = useRef<number | null>(null);
   
   useEffect(() => {
-    if (!walletAddress || !contractAddress || !window.ethereum) {
+    if (!walletAddress || !contractAddress) {
+      return;
+    }
+    
+    if (!window.ethereum) {
+      onError("MetaMask is not installed. Please install MetaMask to use this feature.");
       return;
     }
     
     const initializeContracts = async () => {
       try {
         const provider = new ethers.BrowserProvider(window.ethereum);
+        
+        // Check if we're on the right network
+        const network = await provider.getNetwork();
+        if (network.chainId !== 31337n) {
+          onError(`Please connect to the Anvil network (Chain ID: 31337). Current network: ${network.name} (${network.chainId.toString()})`);
+          return;
+        }
+        
         const signer = await provider.getSigner();
         
         const sniper = new ethers.Contract(
@@ -81,6 +94,21 @@ const useNFTMintWatcher = (
           signer
         );
         
+        // Check if contracts exist
+        try {
+          const sniperCode = await provider.getCode(NFT_SNIPER_ADDRESS);
+          const watcherCode = await provider.getCode(NFT_WATCHER_ADDRESS);
+          
+          if (sniperCode === '0x' || watcherCode === '0x') {
+            onError("NFT Sniper contracts not found. Please make sure they're deployed and you're on the right network.");
+            return;
+          }
+        } catch (error) {
+          console.error("Error checking contract code:", error);
+          onError("Could not verify contracts. Check your network connection.");
+          return;
+        }
+        
         setSniperContract(sniper);
         setWatcherContract(watcher);
         
@@ -92,12 +120,12 @@ const useNFTMintWatcher = (
         setIsInitialized(true);
       } catch (error) {
         console.error("Failed to initialize contracts:", error);
-        onError("Failed to initialize contract interfaces");
+        onError(`Failed to initialize contract interfaces: ${error instanceof Error ? error.message : String(error)}`);
       }
     };
     
     initializeContracts();
-  }, [walletAddress, contractAddress]);
+  }, [walletAddress, contractAddress, onError]);
 
   useEffect(() => {
     if (!sniperConfig.isActive || !isInitialized || !contractAddress || !walletAddress || !sniperContract || !watcherContract) {

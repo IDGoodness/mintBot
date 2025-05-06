@@ -45,6 +45,47 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
 
   const shortenAddress = (addr: string) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 
+  const switchToAnvilNetwork = async () => {
+    if (!window.ethereum) {
+      alert("Please install MetaMask to connect to the Anvil network");
+      return;
+    }
+
+    try {
+      // Request switch to the Anvil local network
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x7A69' }] // 31337 in hex
+      });
+    } catch (error: any) {
+      // This error code indicates that the chain has not been added to MetaMask
+      if (error.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [
+              {
+                chainId: '0x7A69', // 31337 in hex
+                chainName: 'Anvil Local Network',
+                nativeCurrency: {
+                  name: 'Ethereum',
+                  symbol: 'ETH',
+                  decimals: 18
+                },
+                rpcUrls: ['http://localhost:8545'],
+                blockExplorerUrls: []
+              }
+            ]
+          });
+        } catch (addError) {
+          console.error("Error adding Anvil network:", addError);
+        }
+      } else {
+        console.error("Error switching network:", error);
+      }
+    }
+  };
+
   const fetchNFTDetails = async () => {
     const contract = inputValue.trim().toLowerCase();
 
@@ -57,12 +98,34 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
     setBotStatus('Fetching NFT details...');
     
     try {
-      // Check if contract exists
+      if (!window.ethereum) {
+        setNftError("No Ethereum provider detected. Please install MetaMask.");
+        setLoadingNfts(false);
+        return;
+      }
+
+      // Make sure we're connected to the local network
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const code = await provider.getCode(contract);
+      const network = await provider.getNetwork();
+      console.log("Connected to network:", network);
+
+      // Check that we're connected to the right network (for local testing)
+      // 31337 is the chainId for Anvil/Hardhat local networks
+      if (network.chainId !== 31337n) {
+        console.log("Not connected to local network:", network.chainId);
+        setNftError("Please connect to the Anvil local network (http://localhost:8545)");
+        setLoadingNfts(false);
+        return;
+      }
       
-      if (code === '0x') {
-        setNftError("Contract does not exist at this address");
+      // Check if contract exists
+      console.log("Checking contract at address:", contract);
+      const code = await provider.getCode(contract);
+      console.log("Contract code length:", code.length);
+      
+      if (code === '0x' || code === '0x0') {
+        console.log("No contract found at address:", contract);
+        setNftError("Contract does not exist at this address. Make sure you're connected to the right network.");
         setLoadingNfts(false);
         return;
       }
@@ -83,12 +146,14 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
       
       try {
         name = await nftContract.name();
+        console.log("NFT name:", name);
       } catch (e) {
         console.log("Couldn't fetch name:", e);
       }
       
       try {
         symbol = await nftContract.symbol();
+        console.log("NFT symbol:", symbol);
       } catch (e) {
         console.log("Couldn't fetch symbol:", e);
       }
@@ -96,6 +161,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
       try {
         totalSupply = await nftContract.totalSupply();
         totalSupply = Number(totalSupply);
+        console.log("NFT totalSupply:", totalSupply);
       } catch (e) {
         console.log("Couldn't fetch totalSupply:", e);
       }
@@ -120,7 +186,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
       
     } catch (err) {
       console.error("Error fetching contract metadata:", err);
-      setNftError("Error fetching NFT details. Try again.");
+      setNftError(`Error fetching NFT details: ${err instanceof Error ? err.message : String(err)}`);
       setBotStatus('Error fetching NFT details');
     } finally {
       setLoadingNfts(false);
@@ -156,6 +222,30 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
     if (contractAddress) setAddress(contractAddress);
   }, [contractAddress]);
 
+  // Check network connection on component load
+  useEffect(() => {
+    const checkNetwork = async () => {
+      if (!window.ethereum) return;
+      
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const network = await provider.getNetwork();
+        
+        if (network.chainId !== 31337n) {
+          setBotStatus(`Connected to wrong network. Please switch to Anvil (31337)`);
+        } else {
+          setBotStatus(`Connected to Anvil local network`);
+          // Set the mock NFT address as a suggestion
+          setInputValue("0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9");
+        }
+      } catch (error) {
+        console.error("Error checking network:", error);
+      }
+    };
+    
+    checkNetwork();
+  }, []);
+
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#0f172a] overflow-hidden text-white p-6">
       {/* Glowing Orbs */}
@@ -187,6 +277,9 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
             onChange={(e) => setInputValue(e.target.value)}
             className="text-sm font-mono bg-white/20 text-white p-4 rounded-xl w-full focus:outline-none"
           />
+          <p className="mt-1 text-xs text-blue-300">
+            For testing, use the Mock NFT contract: 0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9
+          </p>
         </div>
 
         <div className="flex gap-4 mb-4">
@@ -207,7 +300,17 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             {nftError ? (
-              <p className="text-red-400 col-span-full text-center">{nftError}</p>
+              <div className="col-span-full text-center">
+                <p className="text-red-400 mb-2">{nftError}</p>
+                {nftError.includes("network") && (
+                  <button
+                    onClick={switchToAnvilNetwork}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 mt-2"
+                  >
+                    Switch to Anvil Network
+                  </button>
+                )}
+              </div>
             ) : nfts.length > 0 ? (
               nfts.map((nft, idx) => <NFTCard key={idx} nft={nft} />)
             ) : (
