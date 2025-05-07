@@ -11,7 +11,7 @@ import { config } from './wagmiConfig';
 
 const queryClient = new QueryClient();
 
-function App() {
+function App() { 
   const [walletAddress, setWalletAddress] = useState('');
   const [status, setStatus] = useState('Disconnected');
 

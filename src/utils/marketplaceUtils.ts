@@ -1,6 +1,6 @@
 // utils/marketplaceUtils.ts
 
-const OPENSEA_API_KEY = import.meta.env.OPENSEA_API_KEY;
+export const OPENSEA_API_KEY = import.meta.env.OPENSEA_API_KEY;
 
 /**
  * Fetch NFTs from OpenSea (Ethereum)

@@ -65,7 +65,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
             method: 'wallet_addEthereumChain',
             params: [
               {
-                chainId: '0x7A69', // 31337 in hex
+                chainId: '0x7A69',
                 chainName: 'Anvil Local Network',
                 nativeCurrency: {
                   name: 'Ethereum',
@@ -88,108 +88,103 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
 
   const fetchNFTDetails = async () => {
     const contract = inputValue.trim().toLowerCase();
-
-    if (!contract || contract.length !== 42 || !contract.startsWith("0x")) {
-      setNftError("Please enter a valid Ethereum contract address.");
-      return;
-    }
-
-    setLoadingNfts(true);
-    setBotStatus('Fetching NFT details...');
-    
+    console.log('Starting fetch for:', contract);
+  
     try {
-      if (!window.ethereum) {
-        setNftError("No Ethereum provider detected. Please install MetaMask.");
-        setLoadingNfts(false);
-        return;
+      if (!ethers.isAddress(contract)) {
+        throw new Error('Invalid Ethereum address format');
       }
-
-      // Make sure we're connected to the local network
+  
+      setLoadingNfts(true);
+      setNftError(null);
+      setBotStatus('Fetching NFT details...');
+  
+      // 1. Check network connection first
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const network = await provider.getNetwork();
-      console.log("Connected to network:", network);
-
-      // Check that we're connected to the right network (for local testing)
-      // 31337 is the chainId for Anvil/Hardhat local networks
-      if (network.chainId !== 31337n) {
-        console.log("Not connected to local network:", network.chainId);
-        setNftError("Please connect to the Anvil local network (http://localhost:8545)");
-        setLoadingNfts(false);
-        return;
+      const network = await provider.getNetwork().catch(() => {
+        throw new Error('Failed to connect to Ethereum network');
+      });
+      
+      console.log('Network:', network.name, network.chainId.toString());
+      
+      if (network.chainId !== 1n) {
+        throw new Error('Please connect to Ethereum Mainnet');
       }
+  
+      // 2. Check contract existence with timeout
+      const code = await Promise.race([
+        provider.getCode(contract),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Contract check timeout')), 5000)
+        )
+      ]);
       
-      // Check if contract exists
-      console.log("Checking contract at address:", contract);
-      const code = await provider.getCode(contract);
-      console.log("Contract code length:", code.length);
-      
-      if (code === '0x' || code === '0x0') {
-        console.log("No contract found at address:", contract);
-        setNftError("Contract does not exist at this address. Make sure you're connected to the right network.");
-        setLoadingNfts(false);
-        return;
+      if (code === '0x') {
+        throw new Error('Contract not found on Ethereum Mainnet');
       }
+  
+      // 3. Add API timeout and error handling
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+  
+      const response = await fetch(
+        `https://api.opensea.io/api/v2/chain/ethereum/contract/${contract}`,
+        {
+          headers: { 
+            "X-API-KEY": "49b1fa0034e04b659a78c556af80ac50",
+            "Accept": "application/json"
+          },
+          signal: controller.signal
+        }
+      ).finally(() => clearTimeout(timeout));
+  
+      console.log('API status:', response.status);
       
-      // Create a minimal ERC721 interface to query name and symbol
-      const minimalABI = [
-        "function name() view returns (string)",
-        "function symbol() view returns (string)",
-        "function totalSupply() view returns (uint256)"
-      ];
-      
-      const nftContract = new ethers.Contract(contract, minimalABI, provider);
-      
-      // Try to get name and symbol
-      let name = "Unknown Collection";
-      let symbol = "";
-      let totalSupply = 0;
-      
-      try {
-        name = await nftContract.name();
-        console.log("NFT name:", name);
-      } catch (e) {
-        console.log("Couldn't fetch name:", e);
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('API error:', errorData);
+        throw new Error(`OpenSea API: ${response.status} - ${errorData?.detail || 'Unknown error'}`);
       }
-      
-      try {
-        symbol = await nftContract.symbol();
-        console.log("NFT symbol:", symbol);
-      } catch (e) {
-        console.log("Couldn't fetch symbol:", e);
+  
+      const data = await response.json();
+      console.log('API response:', data);
+  
+      // 4. Validate response structure
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid API response format');
       }
-      
-      try {
-        totalSupply = await nftContract.totalSupply();
-        totalSupply = Number(totalSupply);
-        console.log("NFT totalSupply:", totalSupply);
-      } catch (e) {
-        console.log("Couldn't fetch totalSupply:", e);
-      }
-      
-      // For a real app, you would query an NFT API for more details
-      // For now we'll use what we've found plus some placeholder values
+  
       const nftData = {
-        name: name,
-        symbol: symbol,
-        image: `https://via.placeholder.com/300/4F46E5/FFFFFF?text=${encodeURIComponent(name)}`,
-        slug: symbol.toLowerCase(),
-        description: `${name} (${symbol}) - NFT Collection with ${totalSupply} items`,
+        name: data.name || 'Unnamed Collection',
+        symbol: data.symbol || 'NFT',
+        image: data.image_url || `https://via.placeholder.com/300?text=${encodeURIComponent(data.name || 'NFT')}`,
+        description: data.description || 'No description available',
         contract: contract,
-        floorPrice: 0.1, // In a real app, you'd get this from an API
-        totalSupply: totalSupply
+        floorPrice: data.stats?.floor_price || 0,
+        totalSupply: data.stats?.total_supply || 0
       };
-      
+  
       setNfts([nftData]);
       setCurrentFloor(nftData.floorPrice);
-      setNftError(null);
       setBotStatus('NFT details loaded');
+  
+    } catch (error) {
+      console.error('Full error stack:', error);
+      setNftError(error instanceof Error ? error.message : 'Unknown error occurred');
+      setBotStatus('Error loading NFT details');
       
-    } catch (err) {
-      console.error("Error fetching contract metadata:", err);
-      setNftError(`Error fetching NFT details: ${err instanceof Error ? err.message : String(err)}`);
-      setBotStatus('Error fetching NFT details');
+      // Specific error handling
+      if (error instanceof Error) {
+        if (error.message.includes('Failed to fetch')) {
+          setNftError('Network error - check internet connection');
+        }
+        if (error.message.includes('API')) {
+          setNftError('OpenSea API error - try again later');
+        }
+      }
     } finally {
       setLoadingNfts(false);
+      console.log('Fetch completed');
     }
   };
 
@@ -231,12 +226,10 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         const provider = new ethers.BrowserProvider(window.ethereum);
         const network = await provider.getNetwork();
         
-        if (network.chainId !== 31337n) {
-          setBotStatus(`Connected to wrong network. Please switch to Anvil (31337)`);
+        if (network.chainId !== 1n) { // Ethereum Mainnet
+          setBotStatus(`Please connect to Ethereum Mainnet`);
         } else {
-          setBotStatus(`Connected to Anvil local network`);
-          // Set the mock NFT address as a suggestion
-          setInputValue("0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9");
+          setBotStatus(`Connected to Ethereum Mainnet`);
         }
       } catch (error) {
         console.error("Error checking network:", error);

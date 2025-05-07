@@ -75,8 +75,8 @@ const useNFTMintWatcher = (
         
         // Check if we're on the right network
         const network = await provider.getNetwork();
-        if (network.chainId !== 31337n) {
-          onError(`Please connect to the Anvil network (Chain ID: 31337). Current network: ${network.name} (${network.chainId.toString()})`);
+        if (network.chainId !== 1n) {
+          onError(`Please connect to the Ethereum Mainnet. Current network: ${network.name} (${network.chainId.toString()})`);
           return;
         }
         
