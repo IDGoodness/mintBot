@@ -44,7 +44,6 @@ export const useMainnetNFTSniper = (
   const activeRef = useRef(false);
   const requestCountRef = useRef<number>(0);
   const isInitializedRef = useRef<boolean>(false);
-  const lastCheckTimeRef = useRef<number>(Date.now());
   const providerInitializedRef = useRef<boolean>(false); // New ref to prevent multiple initializations
 
   // Initialize provider and signer only once
