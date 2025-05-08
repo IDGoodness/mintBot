@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+// Import a random fallback image
+import fallbackImg from '../assets/nft3.png';
 
 export interface NFTCardProps {
   nft: {
@@ -17,14 +19,23 @@ export interface NFTCardProps {
 }
 
 const NFTCard: React.FC<NFTCardProps> = ({ nft }) => {
+  const [imgError, setImgError] = useState(false);
+  
+  const handleImageError = () => {
+    console.log("Image failed to load:", nft.image);
+    setImgError(true);
+  };
+
   return (
     <div className="bg-white/10 p-4 rounded-xl border border-white/20 transition-all hover:border-indigo-500/50">
       <div className="flex flex-col h-full">
-        <div className="mb-3">
+        <div className="mb-3 bg-gradient-to-br from-indigo-900/50 to-purple-900/50 rounded-lg">
           <img 
-            src={nft.image} 
+            src={imgError ? fallbackImg : nft.image} 
             alt={nft.name || 'NFT'} 
             className="w-full h-48 object-cover rounded-lg shadow-md" 
+            onError={handleImageError}
+            loading="lazy"
           />
         </div>
         

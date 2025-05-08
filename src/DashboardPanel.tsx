@@ -1,10 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logo from "./assets/logo-remove.png";
-import NFTCard from './components/NFTCard';
-import useSniperConfig from './hooks/useSniperConfig';
-import useNFTMintWatcher from './hooks/useNFTMintWatcher';
+import EnhancedNFTCard from './components/EnhancedNFTCard';
+import { useMainnetNFTSniper } from './hooks/useMainnetNFTSniper';
 import { ethers } from 'ethers';
+import { validateNFTContract, getNFTContractInfo } from './utils/contractUtils';
+import NotificationModal from './components/NotificationModal';
+
+// Import all NFT fallback images
+import nft1 from "./assets/nft1.png";
+import nft2 from "./assets/nft2.png";
+import nft3 from "./assets/nft3.png";
+import nft4 from "./assets/nft4.png";
+import nft5 from "./assets/nft5.png";
 
 interface DashboardPanelProps {
   status: string;
@@ -22,67 +30,85 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
   const [loadingNfts, setLoadingNfts] = useState(false);
   const [gasFee, setGasFee] = useState(100);
   const [currentFloor, setCurrentFloor] = useState(0);
-  const { sniperConfig, setSniperConfig } = useSniperConfig();
+  const [botActive, setBotActive] = useState(false);
   const [botStatus, setBotStatus] = useState('Ready');
   const [mintSuccess, setMintSuccess] = useState(false);
+  const fallbackImages = [nft1, nft2, nft3, nft4, nft5];
+  
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'loading';
+  }>({
+    title: '',
+    message: '',
+    type: 'info'
+  });
+  
+  // Show notification modal function
+  const showNotification = (title: string, message: string, type: 'success' | 'error' | 'info' | 'loading') => {
+    // Set state directly without setTimeout to avoid race conditions
+    setModalConfig({ title, message, type });
+    setModalOpen(true);
+  };
+  
+  // New function to close notification cleanly
+  const closeNotification = () => {
+    setModalOpen(false);
+  };
+  
   console.log(address, currentFloor);
   
   const baseGasFee = 0.1;
   const adjustedGasFee = (baseGasFee * gasFee) / 100;
   
-  useNFTMintWatcher(
-    inputValue, 
-    sniperConfig, 
+  const [activationLoading, setActivationLoading] = useState(false);
+  const activationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const [checkingContract, setCheckingContract] = useState(false);
+  
+  // Add a new state to track connection status
+  const [networkStatus, setNetworkStatus] = useState<'connected'|'connecting'|'error'>('connecting');
+
+  useMainnetNFTSniper(
+    inputValue,
+    botActive,
     gasFee,
-    walletAddress, 
-    () => setBotStatus('Watching for mint...'),
+    walletAddress,
+    () => {
+      setBotStatus('Watching for mint...');
+      showNotification('Bot Activated', 'Bot is now watching for the NFT mint to go live.', 'info');
+    },
     () => {
       setBotStatus('Mint successful!');
       setMintSuccess(true);
+      showNotification('Success!', 'NFT has been successfully minted!', 'success');
     },
-    (error) => setBotStatus(`Error: ${error}`)
+    (error: string) => {
+      setBotStatus(`Error: ${error}`);
+      showNotification('Error Occurred', error, 'error');
+    }
   );
 
   const shortenAddress = (addr: string) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 
-  const switchToAnvilNetwork = async () => {
+  const switchToMainnet = async () => {
     if (!window.ethereum) {
-      alert("Please install MetaMask to connect to the Anvil network");
+      alert("Please install MetaMask to connect to Ethereum Mainnet");
       return;
     }
 
     try {
-      // Request switch to the Anvil local network
+      // Request switch to Ethereum Mainnet
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
-        params: [{ chainId: '0x7A69' }] // 31337 in hex
+        params: [{ chainId: '0x1' }] // Mainnet chainId
       });
     } catch (error: any) {
-      // This error code indicates that the chain has not been added to MetaMask
-      if (error.code === 4902) {
-        try {
-          await window.ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [
-              {
-                chainId: '0x7A69',
-                chainName: 'Anvil Local Network',
-                nativeCurrency: {
-                  name: 'Ethereum',
-                  symbol: 'ETH',
-                  decimals: 18
-                },
-                rpcUrls: ['http://localhost:8545'],
-                blockExplorerUrls: []
-              }
-            ]
-          });
-        } catch (addError) {
-          console.error("Error adding Anvil network:", addError);
-        }
-      } else {
-        console.error("Error switching network:", error);
-      }
+      console.error("Error switching to Mainnet:", error);
+      setBotStatus('Error switching to Mainnet');
     }
   };
 
@@ -98,6 +124,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
       setLoadingNfts(true);
       setNftError(null);
       setBotStatus('Fetching NFT details...');
+      showNotification('Loading', 'Fetching NFT details...', 'loading');
   
       // 1. Check network connection first
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -111,67 +138,139 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         throw new Error('Please connect to Ethereum Mainnet');
       }
   
-      // 2. Check contract existence with timeout
-      const code = await Promise.race([
-        provider.getCode(contract),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Contract check timeout')), 5000)
-        )
-      ]);
-      
-      if (code === '0x') {
-        throw new Error('Contract not found on Ethereum Mainnet');
+      // 2. Display checking message
+      setCheckingContract(true);
+      setBotStatus('Checking contract validity...');
+  
+      // 3. Validate the NFT contract
+      const validation = await validateNFTContract(contract, provider);
+      if (!validation.valid) {
+        throw new Error(validation.reason || 'Invalid NFT contract');
       }
   
-      // 3. Add API timeout and error handling
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
+      setBotStatus('Reading on-chain information...');
+      // 4. Try to get on-chain contract info
+      const contractInfo = await getNFTContractInfo(contract, provider);
+      
+      // 5. Try multiple APIs for best results
+      setBotStatus('Fetching collection data...');
+      let apiData = null;
+      
+      // Try OpenSea API
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
   
-      const response = await fetch(
-        `https://api.opensea.io/api/v2/chain/ethereum/contract/${contract}`,
-        {
-          headers: { 
-            "X-API-KEY": "49b1fa0034e04b659a78c556af80ac50",
-            "Accept": "application/json"
-          },
-          signal: controller.signal
+        const response = await fetch(
+          `https://api.opensea.io/api/v2/chain/ethereum/contract/${contract}`,
+          {
+            headers: { 
+              "X-API-KEY": "49b1fa0034e04b659a78c556af80ac50",
+              "Accept": "application/json"
+            },
+            signal: controller.signal
+          }
+        ).finally(() => clearTimeout(timeout));
+  
+        console.log('OpenSea API status:', response.status);
+        
+        if (response.ok) {
+          apiData = await response.json();
+          console.log('OpenSea API response:', apiData);
         }
-      ).finally(() => clearTimeout(timeout));
-  
-      console.log('API status:', response.status);
+      } catch (apiError) {
+        console.error('OpenSea API error:', apiError);
+      }
       
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('API error:', errorData);
-        throw new Error(`OpenSea API: ${response.status} - ${errorData?.detail || 'Unknown error'}`);
+      // If OpenSea failed, try NFTPort as fallback
+      if (!apiData || !apiData.image_url) {
+        try {
+          const response = await fetch(
+            `https://api.nftport.xyz/v0/nfts/${contract}?chain=ethereum&page_size=1&include=metadata`,
+            {
+              headers: {
+                "Authorization": "77faab75-5cf3-427d-a862-2d0f7f36b406", // Public sample key
+                "Content-Type": "application/json"
+              }
+            }
+          );
+          
+          if (response.ok) {
+            const nftPortData = await response.json();
+            if (nftPortData.nfts && nftPortData.nfts.length > 0) {
+              // Map NFTPort data to match our expected format
+              apiData = {
+                name: nftPortData.contract.name,
+                symbol: contractInfo.symbol,
+                image_url: nftPortData.nfts[0].file_url || nftPortData.nfts[0].cached_file_url,
+                description: nftPortData.contract.metadata?.description,
+                stats: {
+                  floor_price: 0,
+                  total_supply: nftPortData.total || contractInfo.totalSupply?.toString()
+                }
+              };
+            }
+          }
+        } catch (nftPortError) {
+          console.error('NFTPort API error:', nftPortError);
+        }
       }
   
-      const data = await response.json();
-      console.log('API response:', data);
+      // 6. Combine on-chain and API data with proper fallbacks
+      const randomImageIndex = Math.floor(Math.random() * fallbackImages.length);
+      setBotStatus('Building NFT data...');
   
-      // 4. Validate response structure
-      if (!data || typeof data !== 'object') {
-        throw new Error('Invalid API response format');
+      // Check if the image URL is a proper URL format
+      let imageUrl = apiData?.image_url || '';
+      if (imageUrl && !imageUrl.startsWith('http')) {
+        // Try to fix IPFS URLs
+        if (imageUrl.startsWith('ipfs://')) {
+          imageUrl = `https://ipfs.io/ipfs/${imageUrl.replace('ipfs://', '')}`;
+        } else {
+          // If not a valid URL, use a fallback
+          imageUrl = fallbackImages[randomImageIndex];
+        }
+      } else if (!imageUrl) {
+        imageUrl = fallbackImages[randomImageIndex];
       }
   
       const nftData = {
-        name: data.name || 'Unnamed Collection',
-        symbol: data.symbol || 'NFT',
-        image: data.image_url || `https://via.placeholder.com/300?text=${encodeURIComponent(data.name || 'NFT')}`,
-        description: data.description || 'No description available',
+        name: apiData?.name || contractInfo.name || 'Unnamed Collection',
+        symbol: apiData?.symbol || contractInfo.symbol || 'NFT',
+        image: imageUrl,
+        description: apiData?.description || 'No description available',
         contract: contract,
-        floorPrice: data.stats?.floor_price || 0,
-        totalSupply: data.stats?.total_supply || 0
+        floorPrice: typeof apiData?.stats?.floor_price === 'number' ? apiData.stats.floor_price : 0,
+        totalSupply: apiData?.stats?.total_supply || 
+                    (contractInfo.totalSupply ? Number(contractInfo.totalSupply.toString()) : 0)
       };
   
       setNfts([nftData]);
       setCurrentFloor(nftData.floorPrice);
       setBotStatus('NFT details loaded');
+      setCheckingContract(false);
+      
+      // Use the clean close function
+      closeNotification();
+      
+      // Show success notification after a delay
+      setTimeout(() => {
+        showNotification('Success', 'NFT details loaded successfully', 'success');
+      }, 300);
   
     } catch (error) {
       console.error('Full error stack:', error);
       setNftError(error instanceof Error ? error.message : 'Unknown error occurred');
       setBotStatus('Error loading NFT details');
+      setCheckingContract(false);
+      
+      // Use the clean close function
+      closeNotification();
+      
+      // Wait before showing error notification
+      setTimeout(() => {
+        showNotification('Error', error instanceof Error ? error.message : 'Unknown error occurred', 'error');
+      }, 300);
       
       // Specific error handling
       if (error instanceof Error) {
@@ -179,7 +278,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
           setNftError('Network error - check internet connection');
         }
         if (error.message.includes('API')) {
-          setNftError('OpenSea API error - try again later');
+          setNftError('API error - try again later');
         }
       }
     } finally {
@@ -191,16 +290,124 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
   const activateBot = () => {
     if (!inputValue || !gasFee) {
       setNftError("Please enter a contract address and set gas fee first.");
+      showNotification('Missing Information', 'Please enter a contract address and set gas fee first.', 'error');
       return;
     }
     
-    setSniperConfig({ ...sniperConfig, isActive: true });
-    setBotStatus('Bot activated! Watching for mint...');
+    // Validate contract address
+    if (!ethers.isAddress(inputValue)) {
+      setNftError("Please enter a valid Ethereum contract address.");
+      showNotification('Invalid Address', 'Please enter a valid Ethereum contract address.', 'error');
+      return;
+    }
+    
+    // If we have nft error, clear it
+    if (nftError) {
+      setNftError(null);
+    }
+    
+    // Clear any existing interval
+    if (activationIntervalRef.current) {
+      clearInterval(activationIntervalRef.current);
+    }
+    
+    // Show loading state
+    setActivationLoading(true);
+    setBotStatus('Initializing bot...');
+    showNotification('Initializing', 'Bot is being initialized...', 'loading');
+    
+    // Validate the contract before activating
+    const validateContract = async () => {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const validation = await validateNFTContract(inputValue, provider);
+        
+        if (!validation.valid) {
+          setActivationLoading(false);
+          setNftError(validation.reason || 'Invalid NFT contract');
+          setBotStatus('Error: Invalid contract');
+          
+          // Clean modal handling - close then show
+          closeNotification();
+          // Slight delay before showing new modal
+          setTimeout(() => {
+            showNotification('Invalid Contract', validation.reason || 'Invalid NFT contract', 'error');
+          }, 300);
+          return false;
+        }
+        
+        return true;
+      } catch (error) {
+        console.error('Error validating contract:', error);
+        setActivationLoading(false);
+        setNftError('Error validating contract');
+        setBotStatus('Error: Could not validate contract');
+        
+        // Clean modal handling - close then show
+        closeNotification();
+        // Slight delay before showing new modal
+        setTimeout(() => {
+          showNotification('Validation Error', 'Could not validate NFT contract', 'error');
+        }, 300);
+        return false;
+      }
+    };
+    
+    // Start validation and then activation process
+    validateContract().then(isValid => {
+      if (!isValid) return;
+      
+      // Wait for 1 second to simulate initialization
+      setTimeout(() => {
+        setActivationLoading(false);
+        setBotActive(true);
+        setBotStatus('Bot activated! Watching for mint...');
+        
+        // Close loading modal first, wait longer before showing next modal
+        closeNotification();
+        
+        // Longer delay to avoid glitches
+        setTimeout(() => {
+          if (botActive) { // Only show if still active
+            showNotification('Bot Activated', 'Bot is now watching for the NFT mint to go live.', 'info');
+          }
+        }, 500);
+        
+        // Set a timeout to show some activity feedback
+        let dotCount = 0;
+        activationIntervalRef.current = setInterval(() => {
+          if (!botActive) {
+            if (activationIntervalRef.current) {
+              clearInterval(activationIntervalRef.current);
+            }
+            return;
+          }
+          
+          dotCount = (dotCount + 1) % 4;
+          const dots = '.'.repeat(dotCount);
+          setBotStatus(`Watching for mint${dots}`);
+        }, 800);
+      }, 1000);
+    });
   };
 
   const deactivateBot = () => {
-    setSniperConfig({ ...sniperConfig, isActive: false });
+    // Clear the animation interval
+    if (activationIntervalRef.current) {
+      clearInterval(activationIntervalRef.current);
+      activationIntervalRef.current = null;
+    }
+    
+    setBotActive(false);
     setBotStatus('Bot deactivated');
+    
+    // Close any existing notification first
+    closeNotification();
+    
+    // Show deactivation message after a delay
+    setTimeout(() => {
+      showNotification('Bot Deactivated', 'Bot has been stopped.', 'info');
+    }, 300);
   };
 
   const handleConfirm = () => {
@@ -217,30 +424,78 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
     if (contractAddress) setAddress(contractAddress);
   }, [contractAddress]);
 
-  // Check network connection on component load
+  // Update the useEffect that checks network
   useEffect(() => {
     const checkNetwork = async () => {
-      if (!window.ethereum) return;
+      if (!window.ethereum) {
+        setBotStatus('Please install MetaMask');
+        setNetworkStatus('error');
+        return;
+      }
+      
+      setNetworkStatus('connecting');
       
       try {
         const provider = new ethers.BrowserProvider(window.ethereum);
         const network = await provider.getNetwork();
         
         if (network.chainId !== 1n) { // Ethereum Mainnet
-          setBotStatus(`Please connect to Ethereum Mainnet`);
+          setBotStatus('Please connect to Ethereum Mainnet');
+          setNetworkStatus('error');
+          // Prompt to switch
+          await switchToMainnet();
         } else {
-          setBotStatus(`Connected to Ethereum Mainnet`);
+          setBotStatus('Connected to Ethereum Mainnet');
+          setNetworkStatus('connected');
         }
       } catch (error) {
         console.error("Error checking network:", error);
+        setBotStatus('Error checking network');
+        setNetworkStatus('error');
       }
     };
     
     checkNetwork();
+    
+    // Also listen for network changes
+    if (window.ethereum) {
+      window.ethereum.on('chainChanged', () => {
+        checkNetwork();
+      });
+      
+      window.ethereum.on('accountsChanged', () => {
+        checkNetwork();
+      });
+    }
+    
+    return () => {
+      // Clean up listeners
+      if (window.ethereum) {
+        window.ethereum.removeListener('chainChanged', checkNetwork);
+        window.ethereum.removeListener('accountsChanged', checkNetwork);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (activationIntervalRef.current) {
+        clearInterval(activationIntervalRef.current);
+      }
+    };
   }, []);
 
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#0f172a] overflow-hidden text-white p-6">
+      {/* Notification Modal */}
+      <NotificationModal
+        isOpen={modalOpen}
+        onClose={closeNotification}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        type={modalConfig.type}
+      />
+
       {/* Glowing Orbs */}
       <div className="absolute inset-0 z-0">
         <div className="absolute top-[-100px] left-[-100px] w-80 h-80 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse" />
@@ -255,9 +510,23 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         </div>
 
         {/* Wallet Info */}
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold text-white/80">Connected Wallet</h3>
-          <p className="text-sm text-white/60">{shortenAddress(walletAddress)}</p>
+        <div className="mb-4 flex justify-between items-center">
+          <div>
+            <h3 className="text-lg font-semibold text-white/80">Connected Wallet</h3>
+            <p className="text-sm text-white/60">{shortenAddress(walletAddress)}</p>
+          </div>
+          <div className="flex items-center">
+            <div className={`w-3 h-3 rounded-full mr-2 ${
+              networkStatus === 'connected' ? 'bg-green-500' : 
+              networkStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
+              'bg-red-500'
+            }`}></div>
+            <span className="text-sm text-white/70">
+              {networkStatus === 'connected' ? 'Connected to Ethereum' : 
+               networkStatus === 'connecting' ? 'Connecting...' : 
+               'Network Error'}
+            </span>
+          </div>
         </div>
 
         {/* Inputs */}
@@ -286,28 +555,33 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
 
         {/* NFT Display */}
         {loadingNfts ? (
-          <div className="flex justify-center items-center my-6">
-            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mr-2"></div>
-            <p className="text-indigo-300">Loading NFT details...</p>
+          <div className="flex flex-col justify-center items-center my-6 p-8 border border-indigo-500/20 rounded-lg bg-black/20">
+            <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p className="text-indigo-300 text-lg font-medium mb-2">{checkingContract ? 'Checking contract...' : 'Loading NFT details...'}</p>
+            <p className="text-indigo-200/60 text-sm">{botStatus}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
             {nftError ? (
-              <div className="col-span-full text-center">
+              <div className="col-span-full text-center p-6 border border-red-500/20 rounded-lg bg-black/20">
                 <p className="text-red-400 mb-2">{nftError}</p>
-                {nftError.includes("network") && (
+                {nftError.includes("connect to Ethereum Mainnet") && (
                   <button
-                    onClick={switchToAnvilNetwork}
+                    onClick={switchToMainnet}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 mt-2"
                   >
-                    Switch to Anvil Network
+                    Switch to Ethereum Mainnet
                   </button>
                 )}
               </div>
             ) : nfts.length > 0 ? (
-              nfts.map((nft, idx) => <NFTCard key={idx} nft={nft} />)
+              nfts.map((nft, idx) => <EnhancedNFTCard key={idx} nft={nft} />)
             ) : (
-              !loadingNfts && <p className="text-gray-500 col-span-full text-center">No NFTs found. Paste a contract address above.</p>
+              !loadingNfts && (
+                <div className="col-span-full text-center p-6 border border-blue-500/20 rounded-lg bg-black/20">
+                  <p className="text-gray-400">No NFTs found. Enter a contract address above and click "Fetch NFT Details".</p>
+                </div>
+              )
             )}
           </div>
         )}
@@ -352,16 +626,26 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
               <div className="flex gap-3">
                 <button
                   onClick={activateBot}
-                  disabled={sniperConfig.isActive}
-                  className={`flex-1 py-2 px-4 rounded ${sniperConfig.isActive ? 'bg-gray-600' : 'bg-green-600 hover:bg-green-700'}`}
+                  disabled={botActive || activationLoading}
+                  className={`flex-1 py-2 px-4 rounded flex items-center justify-center ${
+                    botActive || activationLoading ? 'bg-gray-600' : 'bg-green-600 hover:bg-green-700'
+                  }`}
                 >
-                  Activate Bot
+                  {activationLoading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Initializing...
+                    </>
+                  ) : 'Activate Bot'}
                 </button>
                 
                 <button
                   onClick={deactivateBot}
-                  disabled={!sniperConfig.isActive}
-                  className={`flex-1 py-2 px-4 rounded ${!sniperConfig.isActive ? 'bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
+                  disabled={!botActive}
+                  className={`flex-1 py-2 px-4 rounded ${!botActive ? 'bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}
                 >
                   Deactivate Bot
                 </button>
