@@ -8,14 +8,25 @@ export const validateNFTContract = async (
   provider: ethers.Provider
 ): Promise<{ valid: boolean; reason?: string }> => {
   try {
-    if (!ethers.isAddress(contractAddress)) {
+    if (!contractAddress || !ethers.isAddress(contractAddress)) {
       return { valid: false, reason: 'Invalid Ethereum address format' };
     }
     
-    // Check if contract exists
-    const code = await provider.getCode(contractAddress);
-    if (code === '0x') {
-      return { valid: false, reason: 'Contract not deployed at this address' };
+    // Check if contract exists with a timeout
+    try {
+      const code = await Promise.race([
+        provider.getCode(contractAddress),
+        new Promise<string>((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout checking contract code')), 10000)
+        )
+      ]);
+      
+      if (code === '0x') {
+        return { valid: false, reason: 'Contract not deployed at this address' };
+      }
+    } catch (codeError) {
+      console.error('Error checking contract code:', codeError);
+      return { valid: false, reason: 'Failed to verify contract deployment - network issues' };
     }
     
     // Try to detect if it's an NFT by checking for common ERC721/ERC1155 interfaces
@@ -59,6 +70,12 @@ export const validateNFTContract = async (
         return { valid: true };
       }
       
+      // Additional fallback - check the contract bytecode for transfer event
+      const bytecode = await provider.getCode(contractAddress);
+      if (bytecode.includes('Transfer(') || bytecode.includes('5RANSFERE')) {
+        return { valid: true, reason: 'Contract appears to implement transfer events' };
+      }
+      
       return { 
         valid: false, 
         reason: 'Contract does not appear to be an ERC721 or ERC1155 NFT'
@@ -94,10 +111,17 @@ export const getNFTContractInfo = async (
       provider
     );
     
-    // Get contract information (if available)
-    const name = await contract.name().catch(() => undefined);
-    const symbol = await contract.symbol().catch(() => undefined);
-    const totalSupply = await contract.totalSupply().catch(() => undefined);
+    // Use Promise.allSettled to handle failures gracefully
+    const [nameResult, symbolResult, supplyResult] = await Promise.allSettled([
+      contract.name(),
+      contract.symbol(),
+      contract.totalSupply()
+    ]);
+    
+    // Extract values or set undefined if rejected
+    const name = nameResult.status === 'fulfilled' ? nameResult.value : undefined;
+    const symbol = symbolResult.status === 'fulfilled' ? symbolResult.value : undefined;
+    const totalSupply = supplyResult.status === 'fulfilled' ? supplyResult.value : undefined;
     
     return { name, symbol, totalSupply };
   } catch (error) {
@@ -114,16 +138,18 @@ export const detectMintFunction = async (
   provider: ethers.Provider
 ): Promise<string | null> => {
   const mintFunctions = [
-    'mint(uint256)',
-    'mint(address,uint256)',
-    'publicMint(uint256)',
-    'publicMint(address,uint256)',
-    'mintPublic(uint256)',
-    'mintPublic(address,uint256)'
+    'function mint(uint256)',
+    'function mint(address,uint256)',
+    'function publicMint(uint256)',
+    'function publicMint(address,uint256)',
+    'function mintPublic(uint256)',
+    'function mintPublic(address,uint256)'
   ];
   
   try {
     for (const func of mintFunctions) {
+      const functionName = func.split('(')[0].replace('function ', '');
+      
       const contract = new ethers.Contract(
         contractAddress,
         [func],
@@ -132,7 +158,7 @@ export const detectMintFunction = async (
       
       try {
         // Just check if the function exists
-        const funcFragment = contract.interface.getFunction(func.split('(')[0]);
+        const funcFragment = contract.interface.getFunction(functionName);
         if (funcFragment) {
           return func;
         }

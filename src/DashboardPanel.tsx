@@ -81,7 +81,6 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
     walletAddress,
     () => {
       setBotStatus('Watching for mint...');
-      showNotification('Bot Activated', 'Bot is now watching for the NFT mint to go live.', 'info');
     },
     () => {
       setBotStatus('Mint successful!');
@@ -316,6 +315,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
     // Show loading state
     setActivationLoading(true);
     setBotStatus('Initializing bot...');
+    
+    // Show loading modal during initialization only
     showNotification('Initializing', 'Bot is being initialized...', 'loading');
     
     // Validate the contract before activating
@@ -329,12 +330,11 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
           setNftError(validation.reason || 'Invalid NFT contract');
           setBotStatus('Error: Invalid contract');
           
-          // Clean modal handling - close then show
+          // Close loading modal
           handleModalClose();
-          // Slight delay before showing new modal
-          setTimeout(() => {
-            showNotification('Invalid Contract', validation.reason || 'Invalid NFT contract', 'error');
-          }, 300);
+          
+          // Show error notification
+          showNotification('Invalid Contract', validation.reason || 'Invalid NFT contract', 'error');
           return false;
         }
         
@@ -345,12 +345,11 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         setNftError('Error validating contract');
         setBotStatus('Error: Could not validate contract');
         
-        // Clean modal handling - close then show
+        // Close loading modal
         handleModalClose();
-        // Slight delay before showing new modal
-        setTimeout(() => {
-          showNotification('Validation Error', 'Could not validate NFT contract', 'error');
-        }, 300);
+        
+        // Show error notification
+        showNotification('Validation Error', 'Could not validate NFT contract', 'error');
         return false;
       }
     };
@@ -365,15 +364,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         setBotActive(true);
         setBotStatus('Bot activated! Watching for mint...');
         
-        // Close loading modal first, wait longer before showing next modal
+        // Close loading modal
         handleModalClose();
-        
-        // Longer delay to avoid glitches
-        setTimeout(() => {
-          if (botActive) { // Only show if still active
-            showNotification('Bot Activated', 'Bot is now watching for the NFT mint to go live.', 'info');
-          }
-        }, 500);
         
         // Set a timeout to show some activity feedback
         let dotCount = 0;
@@ -394,22 +386,18 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
   };
 
   const deactivateBot = () => {
+    // First close any open modals
+    handleModalClose();
+    
     // Clear the animation interval
     if (activationIntervalRef.current) {
       clearInterval(activationIntervalRef.current);
       activationIntervalRef.current = null;
     }
     
+    // Update state
     setBotActive(false);
     setBotStatus('Bot deactivated');
-    
-    // Close any existing notification first
-    handleModalClose();
-    
-    // Show deactivation message after a delay
-    setTimeout(() => {
-      showNotification('Bot Deactivated', 'Bot has been stopped.', 'info');
-    }, 300);
   };
 
   const handleConfirm = () => {
@@ -489,7 +477,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
 
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#0f172a] overflow-hidden text-white p-6">
-      {/* Simple modal rendering */}
+      {/* Simple modal rendering - only keep for errors and loading states */}
       {showModal && (
         <NotificationModal
           isOpen={showModal}
@@ -632,7 +620,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
                   onClick={activateBot}
                   disabled={botActive || activationLoading}
                   className={`flex-1 py-2 px-4 rounded flex items-center justify-center ${
-                    botActive || activationLoading ? 'bg-gray-600' : 'bg-green-600 hover:bg-green-700'
+                    botActive ? 'bg-green-600 text-white cursor-not-allowed' : 
+                    activationLoading ? 'bg-gray-600' : 'bg-green-600 hover:bg-green-700'
                   }`}
                 >
                   {activationLoading ? (
@@ -643,7 +632,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
                       </svg>
                       Initializing...
                     </>
-                  ) : 'Activate Bot'}
+                  ) : botActive ? 'Bot Activated' : 'Activate Bot'}
                 </button>
                 
                 <button
