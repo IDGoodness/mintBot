@@ -138,6 +138,13 @@ export const useMainnetNFTSniper = (
 
   // Helper function to add throttling to a JsonRpcProvider
   const addThrottling = (provider: ethers.JsonRpcProvider) => {
+    // Track last call times for different methods separately
+    const lastCallTimes: Record<string, number> = {};
+    // Track consecutive errors for circuit breaking
+    const errorCounts: Record<string, number> = {};
+    // Set cooling period for methods in milliseconds
+    const METHOD_THROTTLE_TIME = 2000; // 2 seconds
+    
     const throttledProvider = new Proxy(provider, {
       get(target, prop, receiver) {
         const original = Reflect.get(target, prop, receiver);
@@ -146,24 +153,50 @@ export const useMainnetNFTSniper = (
             (prop === 'getBlockNumber' || 
              prop === 'getCode' || 
              prop === 'getLogs' || 
-             prop === 'getNetwork')) {
+             prop === 'getNetwork' ||
+             prop === 'call' ||
+             prop === 'getFeeData')) {
           
           return async (...args: any[]) => {
+            const methodName = String(prop);
             // Throttle requests to avoid rate limiting
             const now = Date.now();
-            const timeSinceLastCall = now - lastCheckTimeRef.current;
+            const lastCallTime = lastCallTimes[methodName] || 0;
+            const timeSinceLastCall = now - lastCallTime;
             
-            if (timeSinceLastCall < 1000) {
-              await new Promise(resolve => setTimeout(resolve, 1000 - timeSinceLastCall));
+            if (timeSinceLastCall < METHOD_THROTTLE_TIME) {
+              // Wait for the throttle time to pass
+              const waitTime = METHOD_THROTTLE_TIME - timeSinceLastCall;
+              console.log(`Throttling ${methodName} for ${waitTime}ms`);
+              await new Promise(resolve => setTimeout(resolve, waitTime));
             }
             
-            lastCheckTimeRef.current = Date.now();
+            lastCallTimes[methodName] = Date.now();
             requestCountRef.current++;
             
             try {
-              return await original.apply(target, args);
+              // Apply the method with timeout to prevent hanging
+              const result = await Promise.race([
+                original.apply(target, args),
+                new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error(`Timeout calling ${methodName}`)), 15000)
+                )
+              ]);
+              
+              // Reset error count on success
+              errorCounts[methodName] = 0;
+              return result;
             } catch (error) {
-              console.error(`Error calling ${String(prop)}:`, error);
+              // Increment error count and log
+              errorCounts[methodName] = (errorCounts[methodName] || 0) + 1;
+              console.error(`Error calling ${methodName} (attempt ${errorCounts[methodName]}):`, error);
+              
+              // If we've had too many errors with this method, delay longer
+              if (errorCounts[methodName] > 2) {
+                console.warn(`Multiple errors with ${methodName}, backing off...`);
+                lastCallTimes[methodName] = Date.now() + 10000; // Extra 10 second cooldown
+              }
+              
               throw error;
             }
           };
@@ -202,7 +235,7 @@ export const useMainnetNFTSniper = (
     };
   }, [isActive]);
 
-  // Main monitoring logic 
+  // Main monitoring logic with improved error handling
   useEffect(() => {
     // Clear any existing interval when dependencies change
     if (watchIntervalRef.current) {
@@ -238,38 +271,101 @@ export const useMainnetNFTSniper = (
           lastBlockCheckTime = now;
           
           try {
-            // First check if contract is active by checking its code
-            const code = await publicProvider.getCode(contractAddress);
-            if (code === '0x') {
-              // Contract not deployed yet, no need to check further
+            // First verify the contract address is valid before doing anything else
+            if (!contractAddress || !ethers.isAddress(contractAddress)) {
+              console.error("Invalid contract address:", contractAddress);
+              onError("Invalid contract address format");
               return;
             }
             
-            // Then check if NFT is active through our different methods
-            const isLive = await checkNFTStatus();
-            if (isLive) {
-              await attemptMint();
+            // Now check if contract is deployed
+            try {
+              const code = await Promise.race([
+                publicProvider.getCode(contractAddress),
+                new Promise<string>((_, reject) => 
+                  setTimeout(() => reject(new Error("Contract code check timed out")), 10000)
+                )
+              ]);
+              
+              if (code === '0x') {
+                console.log("Contract not deployed yet");
+                return; // Just return, no need to show error
+              }
+            } catch (codeError) {
+              console.error("Error checking contract code:", codeError);
+              errorCountRef.current++;
+              // Continue to next checks - might be a temporary network issue
             }
-          } catch (error) {
-            console.error("Error in block check:", error);
+            
+            // Try to check if NFT is active, with a timeout
+            try {
+              const isLivePromise = checkNFTStatus();
+              const timeoutPromise = new Promise<boolean>((_, reject) => {
+                setTimeout(() => reject(new Error("NFT status check timed out")), 15000);
+              });
+              
+              const isLive = await Promise.race([isLivePromise, timeoutPromise]);
+              if (isLive) {
+                await attemptMint();
+              }
+            } catch (statusError) {
+              console.error("Error checking NFT status:", statusError);
+              errorCountRef.current++;
+            }
+          } catch (blockCheckError) {
+            console.error("Error in block check:", blockCheckError);
             errorCountRef.current++;
           }
         }
         
-        // Reset error count on successful execution
-        errorCountRef.current = 0;
+        // If we got here without errors, reset the error counter
+        if (errorCountRef.current > 0) {
+          errorCountRef.current--;
+        }
       } catch (error) {
         console.error("Error in monitoring cycle:", error);
         errorCountRef.current++;
         
-        // Circuit breaker if too many errors
+        // Circuit breaker with specific errors
         if (errorCountRef.current > 5) {
           if (watchIntervalRef.current) {
             clearInterval(watchIntervalRef.current);
             watchIntervalRef.current = null;
           }
           
-          onError("Connection issues detected. Please refresh the page.");
+          // Show a helpful error message
+          let errorMessage = "Connection issues detected. Please refresh the page.";
+          if (error instanceof Error) {
+            // Check for various RPC errors
+            const errorMsg = error.message.toLowerCase();
+            
+            if (errorMsg.includes("cannot read") || 
+                errorMsg.includes("private field") || 
+                errorMsg.includes("typeerror")) {
+              // Internal ethers.js errors
+              errorMessage = "Internal library error. Please refresh the page.";
+            }
+            else if (errorMsg.includes("input") || 
+                errorMsg.includes("format") || 
+                errorMsg.includes("invalid") ||
+                errorMsg.includes("parameter")) {
+              // RPC format issues
+              errorMessage = "RPC provider is having issues with request format. Try again later.";
+            }
+            else if (errorMsg.includes("timeout") || 
+                     errorMsg.includes("timed out") ||
+                     errorMsg.includes("network error")) {
+              // Network timeouts
+              errorMessage = "Network connection issues. Check your internet connection.";
+            }
+            else if (errorMsg.includes("rate limit") || 
+                     errorMsg.includes("too many requests")) {
+              // Rate limiting
+              errorMessage = "Rate limit exceeded. Please wait a few minutes and try again.";
+            }
+          }
+          
+          onError(errorMessage);
         }
       }
     };
@@ -316,18 +412,58 @@ export const useMainnetNFTSniper = (
         
         // Finally check Transfer events, but only if we can't get contract info directly
         try {
-          const filter = {
-            address: contractAddress,
-            topics: [
-              ethers.id('Transfer(address,address,uint256)')
-            ],
-            fromBlock: 'latest'
-          };
+          // Use a block range instead of 'latest' to avoid format issues
+          const currentBlock = await publicProvider.getBlockNumber();
+          // Look back 10 blocks to find transfers
+          const fromBlock = Math.max(0, currentBlock - 10);
           
-          // Use the provider getLogs method with minimal block range
-          const logs = await publicProvider.getLogs(filter);
-          return logs.length > 0;
-        } catch {
+          const transferEventId = ethers.id('Transfer(address,address,uint256)');
+          
+          // Avoid using raw JsonRpcProvider.send() which has private field issues
+          // Instead create a properly formatted filter for getLogs
+          try {
+            // Create a filtered event object
+            const contract = new ethers.Contract(
+              contractAddress,
+              ['event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)'],
+              publicProvider
+            );
+            
+            console.log('Querying for Transfer events on contract:', contractAddress);
+            
+            // Use queryFilter which handles formatting properly
+            const events = await contract.queryFilter(
+              contract.filters.Transfer(),
+              fromBlock, 
+              currentBlock
+            );
+            
+            return events.length > 0;
+          } catch (queryError) {
+            console.error('Error querying events:', queryError);
+            
+            // If queryFilter fails, try a more basic approach with explicit formatting
+            try {
+              // Create a minimal filter with blockchain-compatible hex values
+              const filter = {
+                address: contractAddress,
+                fromBlock: '0x' + fromBlock.toString(16),
+                toBlock: '0x' + currentBlock.toString(16),
+                topics: [transferEventId]
+              };
+              
+              console.log('Falling back to basic getLogs with filter:', filter);
+              
+              // Use the provider getLogs method directly
+              const logs = await publicProvider.getLogs(filter);
+              return logs.length > 0;
+            } catch (logsError) {
+              console.warn('Secondary getLogs approach failed:', logsError);
+              return false;
+            }
+          }
+        } catch (logsError) {
+          console.error('Error checking contract logs:', logsError);
           return false;
         }
       } catch (error) {
