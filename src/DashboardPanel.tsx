@@ -35,28 +35,30 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
   const [mintSuccess, setMintSuccess] = useState(false);
   const fallbackImages = [nft1, nft2, nft3, nft4, nft5];
   
-  // Modal state
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalConfig, setModalConfig] = useState<{
-    title: string;
-    message: string;
-    type: 'success' | 'error' | 'info' | 'loading';
-  }>({
+  // Notification state
+  const [showModal, setShowModal] = useState(false);
+  const [modalProps, setModalProps] = useState({
     title: '',
     message: '',
-    type: 'info'
+    type: 'info' as 'success' | 'error' | 'info' | 'loading'
   });
   
-  // Show notification modal function
+  // Use a simpler notification system
   const showNotification = (title: string, message: string, type: 'success' | 'error' | 'info' | 'loading') => {
-    // Set state directly without setTimeout to avoid race conditions
-    setModalConfig({ title, message, type });
-    setModalOpen(true);
+    // Set the modal properties first
+    setModalProps({
+      title,
+      message,
+      type
+    });
+    
+    // Then show the modal
+    setShowModal(true);
   };
   
-  // New function to close notification cleanly
-  const closeNotification = () => {
-    setModalOpen(false);
+  // Simple close handler
+  const handleModalClose = () => {
+    setShowModal(false);
   };
   
   console.log(address, currentFloor);
@@ -251,7 +253,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
       setCheckingContract(false);
       
       // Use the clean close function
-      closeNotification();
+      handleModalClose();
       
       // Show success notification after a delay
       setTimeout(() => {
@@ -265,7 +267,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
       setCheckingContract(false);
       
       // Use the clean close function
-      closeNotification();
+      handleModalClose();
       
       // Wait before showing error notification
       setTimeout(() => {
@@ -328,7 +330,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
           setBotStatus('Error: Invalid contract');
           
           // Clean modal handling - close then show
-          closeNotification();
+          handleModalClose();
           // Slight delay before showing new modal
           setTimeout(() => {
             showNotification('Invalid Contract', validation.reason || 'Invalid NFT contract', 'error');
@@ -344,7 +346,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         setBotStatus('Error: Could not validate contract');
         
         // Clean modal handling - close then show
-        closeNotification();
+        handleModalClose();
         // Slight delay before showing new modal
         setTimeout(() => {
           showNotification('Validation Error', 'Could not validate NFT contract', 'error');
@@ -364,7 +366,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         setBotStatus('Bot activated! Watching for mint...');
         
         // Close loading modal first, wait longer before showing next modal
-        closeNotification();
+        handleModalClose();
         
         // Longer delay to avoid glitches
         setTimeout(() => {
@@ -402,7 +404,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
     setBotStatus('Bot deactivated');
     
     // Close any existing notification first
-    closeNotification();
+    handleModalClose();
     
     // Show deactivation message after a delay
     setTimeout(() => {
@@ -487,14 +489,16 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
 
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#0f172a] overflow-hidden text-white p-6">
-      {/* Notification Modal */}
-      <NotificationModal
-        isOpen={modalOpen}
-        onClose={closeNotification}
-        title={modalConfig.title}
-        message={modalConfig.message}
-        type={modalConfig.type}
-      />
+      {/* Simple modal rendering */}
+      {showModal && (
+        <NotificationModal
+          isOpen={showModal}
+          onClose={handleModalClose}
+          title={modalProps.title}
+          message={modalProps.message}
+          type={modalProps.type}
+        />
+      )}
 
       {/* Glowing Orbs */}
       <div className="absolute inset-0 z-0">

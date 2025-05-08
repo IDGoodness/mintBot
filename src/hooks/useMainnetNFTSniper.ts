@@ -46,14 +46,19 @@ export const useMainnetNFTSniper = (
   const requestCountRef = useRef<number>(0);
   const isInitializedRef = useRef<boolean>(false);
   const lastCheckTimeRef = useRef<number>(Date.now());
+  const providerInitializedRef = useRef<boolean>(false); // New ref to prevent multiple initializations
 
   // Initialize provider and signer only once
   useEffect(() => {
-    if (isInitializedRef.current) return;
+    // Skip if already initialized or if initialization is in progress
+    if (isInitializedRef.current || providerInitializedRef.current) return;
+    
+    providerInitializedRef.current = true;
     
     const init = async () => {
       if (!window.ethereum) {
         onError('MetaMask not installed');
+        providerInitializedRef.current = false;
         return;
       }
 
@@ -64,6 +69,7 @@ export const useMainnetNFTSniper = (
         
         if (network.chainId !== 1n) {
           onError('Please connect to Ethereum Mainnet');
+          providerInitializedRef.current = false;
           return;
         }
 
@@ -111,9 +117,11 @@ export const useMainnetNFTSniper = (
         
         setPublicProvider(publicProvider);
         isInitializedRef.current = true;
+        providerInitializedRef.current = false;
       } catch (error) {
         console.error('Failed to initialize provider:', error);
         onError('Failed to connect to Ethereum: ' + (error instanceof Error ? error.message : String(error)));
+        providerInitializedRef.current = false;
       }
     };
 
@@ -122,16 +130,19 @@ export const useMainnetNFTSniper = (
 
   // Helper function to throttle method calls
   const getThrottledMethod = (method: Function) => {
+    let lastCallTime = 0;
+    const MIN_INTERVAL = 1000; // 1 second minimum between calls
+    
     return async (...args: any[]) => {
-      // Allow max 2 requests per second
+      // Allow max 1 request per second
       const now = Date.now();
-      const timeSinceLastCheck = now - lastCheckTimeRef.current;
+      const timeSinceLastCall = now - lastCallTime;
       
-      if (timeSinceLastCheck < 500) {
-        await new Promise(resolve => setTimeout(resolve, 500 - timeSinceLastCheck));
+      if (timeSinceLastCall < MIN_INTERVAL) {
+        await new Promise(resolve => setTimeout(resolve, MIN_INTERVAL - timeSinceLastCall));
       }
       
-      lastCheckTimeRef.current = Date.now();
+      lastCallTime = Date.now();
       requestCountRef.current++;
       
       // If we've made too many requests, warn user but don't fail
@@ -174,174 +185,117 @@ export const useMainnetNFTSniper = (
     errorCountRef.current = 0;
     mintAttemptedRef.current = false;
     
-    // Get the current block to start monitoring from
-    const initializeBlockMonitoring = async () => {
-      try {
-        const currentBlock = await publicProvider.getBlockNumber();
-        lastBlockCheckedRef.current = currentBlock;
-        console.log('Starting monitoring from block:', currentBlock);
-      } catch (error) {
-        console.error('Error getting current block:', error);
-      }
-    };
+    // Use a reasonable interval that won't hit rate limits - much longer interval to prevent eth request floods
+    const MONITORING_INTERVAL = 15000; // 15 seconds between checks
+    const BLOCK_CHECK_INTERVAL = 30000; // 30 seconds between block checks
+    let lastBlockCheckTime = 0;
     
-    // Periodic check for new blocks
-    const checkNewBlocks = async () => {
-      if (!activeRef.current || mintAttemptedRef.current) return;
-      
-      try {
-        const latestBlock = await publicProvider.getBlockNumber();
-        
-        if (latestBlock > lastBlockCheckedRef.current) {
-          // Only check blocks if enough time has passed to avoid rapid requests
-          if (Date.now() - lastCheckTimeRef.current > 5000) {
-            // Check for activity in the contract
-            const filter = {
-              address: contractAddress,
-              fromBlock: lastBlockCheckedRef.current + 1,
-              toBlock: latestBlock
-            };
-            
-            const events = await publicProvider.getLogs(filter);
-            
-            if (events.length > 0) {
-              console.log(`Found ${events.length} events for contract, checking mint status`);
-              await checkNFTStatus();
-            }
-            
-            lastBlockCheckedRef.current = latestBlock;
-            lastCheckTimeRef.current = Date.now();
-          }
-        }
-      } catch (error) {
-        console.error('Error checking new blocks:', error);
-        errorCountRef.current++;
-      }
-    };
-
-    // Main check function with throttling
-    const checkNFTStatus = async () => {
-      if (mintAttemptedRef.current || !activeRef.current) return;
-      
-      // Prevent too many checks
-      const now = Date.now();
-      if (now - lastCheckTimeRef.current < 5000) {
+    const monitoringFunction = async () => {
+      if (!activeRef.current || mintAttemptedRef.current) {
         return;
       }
-      
-      lastCheckTimeRef.current = now;
-      
-      // Keep track of which provider we're using
-      let currentProvider = publicProvider;
-      const tryApproaches = async (provider: ethers.Provider) => {
-        try {
-          const approaches = [
-            checkTotalSupply,
-            checkOwnerOf,
-            checkContractActivity
-          ];
+
+      try {
+        // Only check blocks periodically to avoid too many requests
+        const now = Date.now();
+        if (now - lastBlockCheckTime > BLOCK_CHECK_INTERVAL) {
+          lastBlockCheckTime = now;
           
-          for (const approach of approaches) {
-            if (!activeRef.current) return false;
-            
-            const isLive = await approach(provider).catch(() => false);
-            if (isLive) {
-              console.log('Mint is live! Detected using approach:', approach.name);
-              return true;
+          try {
+            // First check if contract is active by checking its code
+            const code = await publicProvider.getCode(contractAddress);
+            if (code === '0x') {
+              // Contract not deployed yet, no need to check further
+              return;
             }
             
-            // Small delay between approaches
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-          
-          return false;
-        } catch (error) {
-          console.error("Error checking NFT status:", error);
-          return false;
-        }
-      };
-      
-      try {
-        // First try with the primary provider
-        const isLive = await tryApproaches(currentProvider);
-        if (isLive) {
-          await attemptMint();
-          return;
-        }
-        
-        // If the primary provider is not the browser provider, try that as fallback
-        if (currentProvider !== provider && provider) {
-          console.log("Trying fallback provider for status check");
-          const isLiveWithFallback = await tryApproaches(provider);
-          if (isLiveWithFallback) {
-            await attemptMint();
-            return;
+            // Then check if NFT is active through our different methods
+            const isLive = await checkNFTStatus();
+            if (isLive) {
+              await attemptMint();
+            }
+          } catch (error) {
+            console.error("Error in block check:", error);
+            errorCountRef.current++;
           }
         }
         
-        // Reset error count on successful check
+        // Reset error count on successful execution
         errorCountRef.current = 0;
       } catch (error) {
+        console.error("Error in monitoring cycle:", error);
         errorCountRef.current++;
-        console.error('Error checking mint status:', error);
+        
+        // Circuit breaker if too many errors
+        if (errorCountRef.current > 5) {
+          if (watchIntervalRef.current) {
+            clearInterval(watchIntervalRef.current);
+            watchIntervalRef.current = null;
+          }
+          
+          onError("Connection issues detected. Please refresh the page.");
+        }
       }
     };
+    
+    // Use a much longer interval that won't flood the network
+    watchIntervalRef.current = setInterval(monitoringFunction, MONITORING_INTERVAL);
+    
+    // Run immediately for first check - but with a delay
+    setTimeout(monitoringFunction, 2000);
 
-    // Check functions
-    const checkTotalSupply = async (provider: ethers.Provider) => {
+    // Combine our checking functions to reduce network calls
+    const checkNFTStatus = async () => {
       try {
-        const contract = new ethers.Contract(
-          contractAddress,
-          ['function totalSupply() view returns (uint256)'],
-          provider
-        );
-        
-        const totalSupply = await contract.totalSupply();
-        return totalSupply > 0n;
-      } catch {
-        return false;
-      }
-    };
-    
-    const checkOwnerOf = async (provider: ethers.Provider) => {
-      try {
-        const contract = new ethers.Contract(
-          contractAddress,
-          ['function ownerOf(uint256) view returns (address)'],
-          provider
-        );
-        
-        // Try to check ownership of token #1
-        await contract.ownerOf(1);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    
-    const checkContractActivity = async (provider: ethers.Provider) => {
-      try {
-        const filter = {
-          address: contractAddress,
-          topics: [
-            ethers.id('Transfer(address,address,uint256)')
-          ],
-          fromBlock: lastBlockCheckedRef.current - 10 > 0 ? lastBlockCheckedRef.current - 10 : 0,
-          toBlock: 'latest'
-        };
-        
-        // Use the provider getLogs method
-        if (provider instanceof ethers.JsonRpcProvider) {
-          const logs = await provider.getLogs(filter);
-          return logs.length > 0;
-        } else if (provider instanceof ethers.BrowserProvider) {
-          // BrowserProvider requires different format
-          const logs = await provider.getLogs(filter);
-          return logs.length > 0;
+        // Try totalSupply approach
+        try {
+          const contract = new ethers.Contract(
+            contractAddress,
+            ['function totalSupply() view returns (uint256)'],
+            publicProvider
+          );
+          
+          const totalSupply = await contract.totalSupply();
+          if (totalSupply > 0n) {
+            return true;
+          }
+        } catch {
+          // Silent fail and try next approach
         }
         
-        return false;
-      } catch {
+        // Try ownerOf approach
+        try {
+          const contract = new ethers.Contract(
+            contractAddress,
+            ['function ownerOf(uint256) view returns (address)'],
+            publicProvider
+          );
+          
+          // Try to check ownership of token #1
+          await contract.ownerOf(1);
+          return true;
+        } catch {
+          // Silent fail and try next approach
+        }
+        
+        // Finally check Transfer events, but only if we can't get contract info directly
+        try {
+          const filter = {
+            address: contractAddress,
+            topics: [
+              ethers.id('Transfer(address,address,uint256)')
+            ],
+            fromBlock: 'latest'
+          };
+          
+          // Use the provider getLogs method with minimal block range
+          const logs = await publicProvider.getLogs(filter);
+          return logs.length > 0;
+        } catch {
+          return false;
+        }
+      } catch (error) {
+        console.error("Error checking NFT status:", error);
         return false;
       }
     };
@@ -407,162 +361,8 @@ export const useMainnetNFTSniper = (
       }
     };
 
-    const setupBlockchainMonitoring = () => {
-      // Clear existing interval if any
-      if (watchIntervalRef.current) {
-        clearInterval(watchIntervalRef.current);
-      }
-
-      // Use a combined monitoring approach that's more reliable
-      const monitoringFunction = async () => {
-        if (!activeRef.current || mintAttemptedRef.current) {
-          return;
-        }
-        
-        try {
-          // First check if we're still connected to the network
-          try {
-            await publicProvider.getBlockNumber();
-          } catch (networkError) {
-            console.error("Provider connection error, attempting to recover:", networkError);
-            
-            // Try to reinitialize the provider
-            if (provider) {
-              try {
-                // First try to use the browser provider directly
-                const blockNum = await provider.getBlockNumber();
-                console.log("Recovered using browser provider, current block:", blockNum);
-                
-                // Update the public provider to use the browser provider
-                setPublicProvider(provider);
-              } catch (recoveryError) {
-                throw new Error("Failed to recover connection: " + recoveryError);
-              }
-            } else {
-              throw new Error("No fallback provider available");
-            }
-          }
-          
-          // Check for new blocks
-          await checkNewBlocks();
-          
-          // Also do a direct NFT status check periodically
-          const now = Date.now();
-          if (now - lastCheckTimeRef.current > 30000) { // Every 30 seconds
-            await checkNFTStatus();
-          }
-        } catch (error) {
-          console.error("Error in monitoring cycle:", error);
-          errorCountRef.current++;
-          
-          // Circuit breaker if too many errors
-          if (errorCountRef.current > 8) {
-            console.warn("Too many monitoring errors, pausing for recovery");
-            if (watchIntervalRef.current) {
-              clearInterval(watchIntervalRef.current);
-              watchIntervalRef.current = null;
-            }
-            
-            onError("Connection issues detected. Trying to recover...");
-            
-            // Try again after 15 seconds with reset error count
-            setTimeout(() => {
-              if (activeRef.current) {
-                errorCountRef.current = 0;
-                // Try to reinitialize
-                const reinitialize = async () => {
-                  try {
-                    // First try to use MetaMask's provider again
-                    const browserProvider = new ethers.BrowserProvider(window.ethereum);
-                    const network = await browserProvider.getNetwork();
-                    
-                    if (network.chainId !== 1n) {
-                      onError('Please connect to Ethereum Mainnet');
-                      return;
-                    }
-                    
-                    const signer = await browserProvider.getSigner();
-                    setProvider(browserProvider);
-                    setSigner(signer);
-                    setPublicProvider(browserProvider);
-                    
-                    if (activeRef.current) {
-                      setupBlockchainMonitoring();
-                    }
-                  } catch (error) {
-                    console.error('Failed to reinitialize:', error);
-                    onError('Recovery failed, please refresh the page');
-                  }
-                };
-                
-                reinitialize();
-              }
-            }, 15000);
-          }
-        }
-      };
-
-      // Use a reasonable interval that won't hit rate limits
-      watchIntervalRef.current = setInterval(monitoringFunction, 15000);
-      
-      // Run immediately for first check
-      monitoringFunction();
-    };
-
-    const startMonitoring = async () => {
-      try {
-        onWatching();
-        
-        // Check contract validity only once and throttle
-        try {
-          const code = await publicProvider.getCode(contractAddress);
-          if (code === '0x') {
-            onError('Contract not deployed yet or invalid address');
-            return;
-          }
-        } catch (codeError) {
-          console.error('Error checking contract code:', codeError);
-          // Try with browser provider if available
-          if (provider instanceof ethers.BrowserProvider) {
-            try {
-              const code = await provider.getCode(contractAddress);
-              if (code === '0x') {
-                onError('Contract not deployed yet or invalid address');
-                return;
-              }
-            } catch (backupError) {
-              console.error('Backup code check also failed:', backupError);
-              onError('Could not verify contract deployment');
-              return;
-            }
-          } else {
-            onError('Could not verify contract deployment');
-            return;
-          }
-        }
-        
-        await initializeBlockMonitoring();
-        console.log('Starting monitoring for contract:', contractAddress);
-        setupBlockchainMonitoring();
-        
-        // Do an initial status check after a small delay to avoid RPC throttling
-        setTimeout(async () => {
-          if (activeRef.current) {
-            await checkNFTStatus();
-          }
-        }, 2000);
-      } catch (error) {
-        console.error('Error starting monitoring:', error);
-        onError('Failed to start monitoring: ' + (error instanceof Error ? error.message : String(error)));
-      }
-    };
-
-    // Start with a small delay to avoid immediate API calls after button click
-    setTimeout(() => {
-      if (activeRef.current) {
-        startMonitoring();
-      }
-    }, 1000);
+    // Start the process with a single notification
+    onWatching();
 
     // Cleanup
     return () => {
