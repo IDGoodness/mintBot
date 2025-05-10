@@ -8,14 +8,28 @@ import nft3 from "./assets/nft3.png";
 import nft4 from "./assets/nft4.png";
 import nft5 from "./assets/nft5.png";
 import logo from "./assets/logo-remove.png";
+import { useNavigate } from 'react-router-dom';
 
 interface NFTMintSiteProps {
   onConnect: (addr: string) => void;
 }
 
 const NFTMintSite: React.FC<NFTMintSiteProps> = ({ onConnect }) => {
+  const navigate = useNavigate();
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const images = [nft1, nft2, nft3, nft4, nft5];
+
+  useEffect(() => {
+    // Check for valid session
+    const sessionData = localStorage.getItem('sessionData');
+    if (sessionData) {
+      const data = JSON.parse(sessionData);
+      const isSessionValid = Date.now() - data.timestamp < 24 * 60 * 60 * 1000; // 24 hours
+      if (isSessionValid) {
+        navigate('/dashboard');
+      }
+    }
+  }, [navigate]);
 
   useEffect(() => {
     const interval = setInterval(() => {

@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { useState } from 'react';
 import NFTMintSite from './NFTMintSite.tsx';
-import DashboardPanel from './DashboardPanel';
+import DashboardPanel from './components/DashboardPanel';
 import ConfirmationPage from './components/ConfirmationPage';
 import SuccessPage from './components/SuccessPage';
 
@@ -40,6 +40,16 @@ function App() {
                   />
                 )
               }
+            />
+            <Route 
+              path="/dashboard" 
+              element={
+                <DashboardPanel
+                  status={status}
+                  contractAddress={contractAddress}
+                  walletAddress={walletAddress}
+                />
+              } 
             />
             <Route path="/confirmation" element={<ConfirmationPage />} />
             <Route path="/success" element={<SuccessPage />} />

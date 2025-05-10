@@ -6,8 +6,8 @@ declare global {
   }
 }
 
-import { useState } from 'react';
-import { Web3Provider } from '@ethersproject/providers'; // Correct import
+import React, { useState } from 'react';
+import { ethers } from 'ethers';
 
 interface ConnectProps {
   onConnect: (address: string) => void;
@@ -24,10 +24,9 @@ const Connect: React.FC<ConnectProps> = ({ onConnect }) => {
     }
 
     try {
-      const provider = new Web3Provider(window.ethereum); // Correct usage of Web3Provider
-      await provider.send('eth_requestAccounts', []);
-      const signer = await provider.getSigner();
-      const addr = await signer.getAddress();
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const accounts = await provider.send('eth_requestAccounts', []);
+      const addr = accounts[0];
 
       setConnected(true);
       setAddress(addr);

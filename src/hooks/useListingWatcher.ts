@@ -3,9 +3,8 @@ import { useEffect } from 'react';
 const useListingWatcher = (contract: string, floor: number, sniperConfig: { percentage: number, isActive: boolean }) => {
   useEffect(() => {
     if (!sniperConfig.isActive || !contract || !floor) return;
-
     const ws = new WebSocket('wss://ws.reservoir.tools/asks/v4');
-
+    
     ws.onopen = () => {
       ws.send(JSON.stringify({
         type: "subscribe",

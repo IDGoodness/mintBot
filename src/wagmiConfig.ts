@@ -1,8 +1,6 @@
-// wagmiConfig.ts
 import { createConfig, http } from 'wagmi';
 import { mainnet } from 'wagmi/chains';
 
-// Optional: Add Berachain chain
 export const berachain = {
   id: 80085,
   name: 'Berachain',
@@ -27,5 +25,5 @@ export const config = createConfig({
     [mainnet.id]: http(),
     [berachain.id]: http('https://rpc.berachain.dev'),
   },
-  ssr: true, // Optional; only needed if you're doing SSR (Next.js, etc.)
+  ssr: true,
 });

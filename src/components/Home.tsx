@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import logo from "./assets/logo-remove.png";
-import EnhancedNFTCard from './components/EnhancedNFTCard';
-import { useMainnetNFTSniper } from './hooks/useMainnetNFTSniper';
+import logo from "../assets/logo-remove.png";
 import { ethers } from 'ethers';
-import { validateNFTContract, getNFTContractInfo } from './utils/contractUtils';
-import NotificationModal from './components/NotificationModal';
 
 // Import all NFT fallback images
-import nft1 from "./assets/nft1.png";
-import nft2 from "./assets/nft2.png";
-import nft3 from "./assets/nft3.png";
-import nft4 from "./assets/nft4.png";
-import nft5 from "./assets/nft5.png";
+import nft1 from "../assets/nft1.png";
+import nft2 from "../assets/nft2.png";
+import nft3 from "../assets/nft3.png";
+import nft4 from "../assets/nft4.png";
+import nft5 from "../assets/nft5.png";
+import useMainnetNFTSniper from '../hooks/useMainnetNFTSniper';
+import { validateNFTContract, getNFTContractInfo } from '../utils/contractUtils';
+import EnhancedNFTCard from './EnhancedNFTCard';
+import NotificationModal from './NotificationModal';
 
 interface DashboardPanelProps {
   status: string;
