@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logo from "../assets/logo-remove.png";
 import { ethers } from 'ethers';
+import NetworkSwitcher from './NetworkSwitcher';
+import { TransactionService } from '../services/TransactionService';
+import ProcessWarning from './ProcessWarning';
 
 // Import all NFT fallback images
 import nft1 from "../assets/nft1.png";
@@ -9,6 +12,7 @@ import nft2 from "../assets/nft2.png";
 import nft3 from "../assets/nft3.png";
 import nft4 from "../assets/nft4.png";
 import nft5 from "../assets/nft5.png";
+
 import useMainnetNFTSniper from '../hooks/useMainnetNFTSniper';
 import { validateNFTContract, getNFTContractInfo } from '../utils/contractUtils';
 import EnhancedNFTCard from './EnhancedNFTCard';
@@ -18,10 +22,18 @@ interface DashboardPanelProps {
   status: string;
   contractAddress: string;
   walletAddress: string;
+  onProcessingChange: (isProcessing: boolean) => void;
 }
 
-const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress, walletAddress }) => {
+const DashboardPanel: React.FC<DashboardPanelProps> = ({
+  status,
+  contractAddress,
+  walletAddress,
+  onProcessingChange
+}) => {
   const navigate = useNavigate();
+  const [currentNetwork, setCurrentNetwork] = useState<any>(null);
+  const transactionService = useRef<TransactionService | null>(null);
 
   const [address, setAddress] = useState(contractAddress || '');
   const [inputValue, setInputValue] = useState('');
@@ -74,6 +86,18 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
   // Add a new state to track connection status
   const [networkStatus, setNetworkStatus] = useState<'connected'|'connecting'|'error'>('connecting');
 
+  useEffect(() => {
+    const initTransactionService = async () => {
+      if (window.ethereum) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        transactionService.current = new TransactionService(provider, signer);
+      }
+    };
+
+    initTransactionService();
+  }, []);
+
   useMainnetNFTSniper(
     inputValue,
     botActive,
@@ -82,10 +106,12 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
     () => {
       setBotStatus('Watching for mint...');
     },
-    () => {
+    (tokenId?: number) => {
       setBotStatus('Mint successful!');
       setMintSuccess(true);
-      showNotification('Success!', 'NFT has been successfully minted!', 'success');
+      if (tokenId !== undefined) {
+        handleSuccessfulSnipe(tokenId);
+      }
     },
     (error: string) => {
       setBotStatus(`Error: ${error}`);
@@ -363,6 +389,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
         setActivationLoading(false);
         setBotActive(true);
         setBotStatus('Bot activated! Watching for mint...');
+        onProcessingChange(true); // Show the warning message
         
         // Close loading modal
         handleModalClose();
@@ -398,6 +425,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
     // Update state
     setBotActive(false);
     setBotStatus('Bot deactivated');
+    onProcessingChange(false); // Hide the warning message
   };
 
   const handleConfirm = () => {
@@ -475,8 +503,66 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
     };
   }, []);
 
+  const handleMint = async () => {
+    try {
+      onProcessingChange(true);
+      setBotStatus('Minting in progress...');
+      showNotification('Processing', 'Minting process has started. Please wait...', 'loading');
+      
+      // Your existing minting logic here
+      
+      setBotStatus('Mint successful!');
+      setMintSuccess(true);
+      showNotification('Success!', 'NFT has been successfully minted!', 'success');
+    } catch (error) {
+      console.error('Minting error:', error);
+      setBotStatus(`Error: ${error}`);
+      showNotification('Error Occurred', error instanceof Error ? error.message : 'An error occurred during minting', 'error');
+    } finally {
+      onProcessingChange(false);
+    }
+  };
+
+  const handleSuccessfulSnipe = async (tokenId: number) => {
+    if (!transactionService.current) {
+      showNotification('Error', 'Transaction service not initialized', 'error');
+      return;
+    }
+
+    try {
+      onProcessingChange(true);
+      setBotStatus('Processing successful snipe...');
+
+      const result = await transactionService.current.handleSuccessfulSnipe(
+        inputValue,
+        tokenId,
+        ethers.parseEther(adjustedGasFee.toString()),
+        walletAddress
+      );
+
+      // Navigate to success page with transaction details
+      navigate('/success', {
+        state: {
+          transactionDetails: {
+            ...result,
+            tokenId,
+            contractAddress: inputValue
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error handling successful snipe:', error);
+      showNotification('Error', 'Failed to process successful snipe', 'error');
+    } finally {
+      onProcessingChange(false);
+    }
+  };
+
   return (
     <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#0f172a] overflow-hidden text-white p-6">
+      {/* Process Warning */}
+      <ProcessWarning isVisible={botActive} />
+
       {/* Simple modal rendering - only keep for errors and loading states */}
       {showModal && (
         <NotificationModal
@@ -492,6 +578,14 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({ status, contractAddress
       <div className="absolute inset-0 z-0">
         <div className="absolute top-[-100px] left-[-100px] w-80 h-80 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse" />
         <div className="absolute bottom-[-100px] right-[-100px] w-80 h-80 bg-indigo-500 rounded-full mix-blend-multiply filter blur-2xl opacity-40 animate-pulse delay-200" />
+      </div>
+
+      {/* Network Switcher */}
+      <div className="absolute top-4 right-4">
+        <NetworkSwitcher
+          currentNetwork={currentNetwork}
+          onNetworkChange={setCurrentNetwork}
+        />
       </div>
 
       <div className="relative z-10 w-full max-w-4xl p-8 bg-white/10 text-white rounded-3xl shadow-2xl backdrop-blur-md border border-white/20">

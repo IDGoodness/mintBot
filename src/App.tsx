@@ -4,6 +4,7 @@ import NFTMintSite from './NFTMintSite.tsx';
 import DashboardPanel from './components/DashboardPanel';
 import ConfirmationPage from './components/ConfirmationPage';
 import SuccessPage from './components/SuccessPage';
+import ProcessWarning from './components/ProcessWarning';
 
 import { WagmiProvider } from 'wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -14,6 +15,7 @@ const queryClient = new QueryClient();
 function App() { 
   const [walletAddress, setWalletAddress] = useState('');
   const [status, setStatus] = useState('Disconnected');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleWalletConnect = (address: string) => {
     setWalletAddress(address);
@@ -26,6 +28,7 @@ function App() {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <Router>
+          <ProcessWarning isVisible={isProcessing} />
           <Routes>
             <Route
               path="/"
@@ -37,6 +40,7 @@ function App() {
                     status={status}
                     contractAddress={contractAddress}
                     walletAddress={walletAddress}
+                    onProcessingChange={setIsProcessing}
                   />
                 )
               }
@@ -48,6 +52,7 @@ function App() {
                   status={status}
                   contractAddress={contractAddress}
                   walletAddress={walletAddress}
+                  onProcessingChange={setIsProcessing}
                 />
               } 
             />
