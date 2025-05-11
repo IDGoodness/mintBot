@@ -503,28 +503,6 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
     };
   }, []);
 
-  const handleMint = async () => {
-    try {
-      onProcessingChange(true);
-      setBotStatus('Minting in progress...');
-      showNotification('Processing', 'Minting process has started. Please wait...', 'loading');
-      
-      // Your existing minting logic here
-      
-      setBotStatus('Mint successful!');
-      setMintSuccess(true);
-      showNotification('Success!', 'NFT has been successfully minted!', 'success');
-    } catch (error) {
-      console.error('Minting error:', error);
-      setBotStatus(`Error: ${error}`);
-      showNotification('Error Occurred', error instanceof Error ? error.message : 'An error occurred during minting', 'error');
-    } finally {
-      onProcessingChange(false);
-    }
-  };
-
-  console.log(handleMint)
-
   const handleSuccessfulSnipe = async (tokenId: number) => {
     if (!transactionService.current) {
       showNotification('Error', 'Transaction service not initialized', 'error');

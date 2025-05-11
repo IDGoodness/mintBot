@@ -1,13 +1,16 @@
 import { ethers } from 'ethers';
+import { transferNFT } from '../utils/nftTransferUtils';
 
 const FEE_RECIPIENT = '0x...'; // Replace with your fee recipient address
 const FEE_PERCENTAGE = 2; // 2% fee
 
 export class TransactionService {
   private signer: ethers.Signer;
+  private provider: ethers.Provider;
 
   constructor(signer: ethers.Signer) {
     this.signer = signer;
+    this.provider = signer.provider!;
   }
 
   async calculateAndDeductFee(amount: bigint): Promise<bigint> {
@@ -24,31 +27,15 @@ export class TransactionService {
     return remainingAmount;
   }
 
-  async transferNFT(contractAddress: string, tokenId: number, toAddress: string): Promise<ethers.ContractTransactionResponse> {
-    const nftContract = new ethers.Contract(
+  async transferNFT(contractAddress: string, tokenId: number, toAddress: string): Promise<boolean> {
+    // Use the provider for read operations and signer for write operations
+    return await transferNFT(
+      this.provider,
+      this.signer,
       contractAddress,
-      [
-        'function transferFrom(address from, address to, uint256 tokenId)',
-        'function safeTransferFrom(address from, address to, uint256 tokenId)'
-      ],
-      this.signer
+      BigInt(tokenId),
+      toAddress
     );
-
-    try {
-      // Try safeTransferFrom first
-      return await nftContract.safeTransferFrom(
-        await this.signer.getAddress(),
-        toAddress,
-        tokenId
-      );
-    } catch (error) {
-      // Fallback to regular transferFrom if safeTransferFrom fails
-      return await nftContract.transferFrom(
-        await this.signer.getAddress(),
-        toAddress,
-        tokenId
-      );
-    }
   }
 
   async handleSuccessfulSnipe(
@@ -58,12 +45,12 @@ export class TransactionService {
     userAddress: string
   ): Promise<{
     feeTx: ethers.TransactionResponse;
-    nftTx: ethers.ContractTransactionResponse;
+    nftTx: boolean;
   }> {
     // 1. Calculate and deduct fee
     const remainingAmount = await this.calculateAndDeductFee(mintAmount);
 
-    // 2. Transfer NFT to user
+    // 2. Transfer NFT to user using the provider and signer
     const nftTx = await this.transferNFT(contractAddress, tokenId, userAddress);
 
     // Get the fee transaction
