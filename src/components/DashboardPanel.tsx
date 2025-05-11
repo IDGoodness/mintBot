@@ -91,7 +91,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
       if (window.ethereum) {
         const provider = new ethers.BrowserProvider(window.ethereum);
         const signer = await provider.getSigner();
-        transactionService.current = new TransactionService(provider, signer);
+        transactionService.current = new TransactionService(signer);
       }
     };
 
@@ -522,6 +522,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
       onProcessingChange(false);
     }
   };
+
+  console.log(handleMint)
 
   const handleSuccessfulSnipe = async (tokenId: number) => {
     if (!transactionService.current) {

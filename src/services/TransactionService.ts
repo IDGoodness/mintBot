@@ -4,11 +4,9 @@ const FEE_RECIPIENT = '0x...'; // Replace with your fee recipient address
 const FEE_PERCENTAGE = 2; // 2% fee
 
 export class TransactionService {
-  private provider: ethers.Provider;
   private signer: ethers.Signer;
 
-  constructor(provider: ethers.Provider, signer: ethers.Signer) {
-    this.provider = provider;
+  constructor(signer: ethers.Signer) {
     this.signer = signer;
   }
 
