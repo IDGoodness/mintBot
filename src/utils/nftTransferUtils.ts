@@ -25,11 +25,11 @@ export async function transferNFT(
   toAddress: string
 ): Promise<boolean> {
   try {
-    // Create contract instance
-    const contract = new ethers.Contract(contractAddress, ERC721_ABI, signer);
+    // Create contract instance with the provider for read operations
+    const readContract = new ethers.Contract(contractAddress, ERC721_ABI, provider);
     
-    // Get the current owner of the NFT
-    const currentOwner = await contract.ownerOf(tokenId);
+    // Get the current owner of the NFT using the provider
+    const currentOwner = await readContract.ownerOf(tokenId);
     
     // Check if the signer is the owner
     const signerAddress = await signer.getAddress();
@@ -37,16 +37,19 @@ export async function transferNFT(
       throw new Error('Signer is not the owner of the NFT');
     }
     
+    // Create contract instance with signer for write operations
+    const writeContract = new ethers.Contract(contractAddress, ERC721_ABI, signer);
+    
     // Try safeTransferFrom first (recommended)
     try {
-      const tx = await contract.safeTransferFrom(signerAddress, toAddress, tokenId);
+      const tx = await writeContract.safeTransferFrom(signerAddress, toAddress, tokenId);
       await tx.wait();
       return true;
     } catch (error) {
       console.warn('safeTransferFrom failed, trying transferFrom:', error);
       
       // Fallback to regular transferFrom
-      const tx = await contract.transferFrom(signerAddress, toAddress, tokenId);
+      const tx = await writeContract.transferFrom(signerAddress, toAddress, tokenId);
       await tx.wait();
       return true;
     }

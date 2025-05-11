@@ -6,7 +6,7 @@ import { ethers } from 'ethers';
 interface SuccessPageProps {
   transactionDetails?: {
     feeTx: ethers.TransactionResponse;
-    nftTx: ethers.ContractTransactionResponse;
+    nftTx: boolean;
     tokenId: number;
     contractAddress: string;
   };
@@ -68,15 +68,10 @@ const SuccessPage: React.FC<SuccessPageProps> = ({ transactionDetails }) => {
                 <p className="text-white font-mono break-all">{details.contractAddress}</p>
               </div>
               <div>
-                <p className="text-gray-400 text-sm">NFT Transaction Hash</p>
-                <a
-                  href={`https://etherscan.io/tx/${details.nftTx.hash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-400 hover:text-blue-300 font-mono break-all"
-                >
-                  {details.nftTx.hash}
-                </a>
+                <p className="text-gray-400 text-sm">NFT Transfer Status</p>
+                <p className={`font-mono ${details.nftTx ? 'text-green-400' : 'text-red-400'}`}>
+                  {details.nftTx ? 'Successfully Transferred' : 'Transfer Failed'}
+                </p>
               </div>
               <div>
                 <p className="text-gray-400 text-sm">Fee Transaction Hash</p>
