@@ -169,10 +169,25 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
       setCheckingContract(true);
       setBotStatus('Checking contract validity...');
   
-      // 3. Validate the NFT contract
-      const validation = await validateNFTContract(contract, provider);
-      if (!validation.valid) {
-        throw new Error(validation.reason || 'Invalid NFT contract');
+      // 3. Validate the NFT contract with more detailed error handling
+      try {
+        const validation = await validateNFTContract(contract, provider);
+        if (!validation.valid) {
+          // Check if the contract exists at all
+          const code = await provider.getCode(contract);
+          if (code === '0x') {
+            throw new Error('No contract deployed at this address');
+          }
+          throw new Error(validation.reason || 'Invalid NFT contract');
+        }
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message.includes('No contract deployed')) {
+            throw new Error('No contract deployed at this address. Please verify the contract address is correct.');
+          }
+          throw error;
+        }
+        throw new Error('Failed to validate contract');
       }
   
       setBotStatus('Reading on-chain information...');
@@ -457,6 +472,9 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
         const provider = new ethers.BrowserProvider(window.ethereum);
         const network = await provider.getNetwork();
         
+        // Update currentNetwork state
+        setCurrentNetwork(network);
+        
         if (network.chainId !== 1n) { // Ethereum Mainnet
           setBotStatus('Please connect to Ethereum Mainnet');
           setNetworkStatus('error');
@@ -477,7 +495,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
     
     // Also listen for network changes
     if (window.ethereum) {
-      window.ethereum.on('chainChanged', () => {
+      window.ethereum.on('chainChanged', (chainId: string) => {
+        console.log('Chain changed to:', chainId);
         checkNetwork();
       });
       
