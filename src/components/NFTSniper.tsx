@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ethers } from 'ethers';
 import { UpcomingNFT } from '../services/MintifyService';
-import { detectMintFunctions, watchForMintActivation, executeDirectMint } from '../utils/nftDetection';
+import { detectMintFunctions, watchForMintActivation, isMintFunctionAccessible } from '../utils/nftDetection';
 import { isTargetContractDeployed } from '../utils/contractIntegration';
 import fallbackImg from '../assets/nft3.png';
 
@@ -9,9 +9,14 @@ interface NFTSniperProps {
   drop: UpcomingNFT;
   walletAddress: string | null;
   onBack: () => void;
+  onLog: (message: string) => void;
+  onSuccess: (tokenId?: number) => void;
+  onError: (error: string) => void;
+  isActive: boolean;
+  gasFeePercentage: number;
 }
 
-export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBack }) => {
+export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBack, onLog, onSuccess, onError, isActive, gasFeePercentage }) => {
   const [status, setStatus] = useState<'idle' | 'monitoring' | 'minting' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [contractDeployed, setContractDeployed] = useState<boolean>(false);
@@ -24,14 +29,19 @@ export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBac
   const [automaticMint, setAutomaticMint] = useState(true);
   const [mintSpeed, setMintSpeed] = useState<'normal' | 'turbo' | 'extreme'>('normal');
   const MINTIFY_API_KEY = '85c2edccc6fad38585b794b3595af637928bd512';
+  const provider = useRef<ethers.BrowserProvider | null>(null);
+  const signer = useRef<ethers.JsonRpcSigner | null>(null);
+  const checkInterval = useRef<NodeJS.Timeout | null>(null);
+  const mintingInProgress = useRef(false);
+  console.log(setTransactionHash)
 
   // Add a log message
-  const addLog = useCallback((message: string) => {
+  const addLog = (message: string) => {
     setLogMessages(logs => [message, ...logs.slice(0, 49)]); // Keep last 50 logs
-  }, []);
+  };
 
   // Check Mintify API for upcoming NFT status
-  const checkMintifyAPI = useCallback(async () => {
+  const checkMintifyAPI = async () => {
     addLog(`Checking Mintify for upcoming NFT: ${drop.contractAddress}`);
     
     try {
@@ -85,7 +95,7 @@ export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBac
       addLog(`Error checking Mintify API: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return false;
     }
-  }, [drop.contractAddress, addLog]);
+  };
 
   // Check if contract is deployed
   useEffect(() => {
@@ -97,14 +107,18 @@ export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBac
         await checkMintifyAPI();
         
         // Then check on-chain status
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        const deployed = await isTargetContractDeployed(provider, drop.contractAddress);
+        const newProvider = new ethers.BrowserProvider(window.ethereum);
+        provider.current = newProvider;
+        signer.current = await newProvider.getSigner();
+        addLog('Connected to wallet');
+        
+        const deployed = await isTargetContractDeployed(newProvider, drop.contractAddress);
         setContractDeployed(deployed);
         
         if (deployed) {
           addLog(`Contract ${drop.contractAddress} is deployed.`);
           // Detect mint functions
-          const functions = await detectMintFunctions(provider, drop.contractAddress);
+          const functions = await detectMintFunctions(newProvider, drop.contractAddress);
           setMintFunctions(functions);
           addLog(`Detected ${functions.length} mint functions.`);
         } else {
@@ -124,7 +138,7 @@ export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBac
   }, [drop.contractAddress, addLog, checkMintifyAPI]);
 
   // Start monitoring for mint function activation
-  const startMonitoring = useCallback(async () => {
+  const startMonitoring = async () => {
     if (!window.ethereum || !walletAddress) {
       setError('Ethereum provider or wallet not available');
       return;
@@ -135,7 +149,9 @@ export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBac
     addLog('Starting mint function monitor...');
 
     try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      const newProvider = new ethers.BrowserProvider(window.ethereum);
+      provider.current = newProvider;
+      signer.current = await newProvider.getSigner();
       
       // Define the callback for when a mint function becomes active
       const onMintActivated = async (mintFunction: { name: string, signature: string }) => {
@@ -145,13 +161,13 @@ export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBac
         // If automatic mint is enabled, trigger the mint
         if (automaticMint) {
           addLog(`Automatic mint enabled, executing mint using ${mintFunction.name}...`);
-          executeMint(mintFunction.name);
+          executeMint();
         }
       };
       
       // Start watching for mint activation with different intervals based on speed
       const intervalMs = mintSpeed === 'normal' ? 5000 : mintSpeed === 'turbo' ? 2000 : 500;
-      const cleanup = watchForMintActivation(provider, drop.contractAddress, onMintActivated, intervalMs);
+      const cleanup = watchForMintActivation(newProvider, drop.contractAddress, onMintActivated, intervalMs);
       
       addLog(`Monitoring mint activation every ${intervalMs}ms (${mintSpeed} mode).`);
       return () => cleanup();
@@ -160,41 +176,176 @@ export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBac
       setError(`Error monitoring: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setStatus('error');
     }
-  }, [walletAddress, drop.contractAddress, addLog, automaticMint, mintSpeed]);
+  };
 
   // Execute the mint function
-  const executeMint = useCallback(async (mintFunctionName: string) => {
-    if (!window.ethereum || !walletAddress) {
-      setError('Ethereum provider or wallet not available');
+  const executeMint = async () => {
+    if (mintingInProgress.current || !provider.current || !signer.current) return;
+    
+    mintingInProgress.current = true;
+    addLog('Executing mint transaction...');
+    
+    try {
+      const contract = new ethers.Contract(
+        drop.contractAddress,
+        [
+          `function ${activeMintFunction?.name}(uint256) payable`,
+          `function ${activeMintFunction?.name}() payable`
+        ],
+        signer.current
+      );
+      
+      const gasPrice = await provider.current.getFeeData();
+      let maxFeePerGas = gasPrice.maxFeePerGas || gasPrice.gasPrice;
+      
+      if (maxFeePerGas) {
+        maxFeePerGas = (maxFeePerGas * BigInt(gasFeePercentage)) / 100n;
+      }
+      
+      const options: { value: bigint; maxFeePerGas?: bigint } = {
+        value: ethers.parseEther(drop.mintPrice || "0.05")
+      };
+      
+      if (maxFeePerGas) {
+        options.maxFeePerGas = maxFeePerGas;
+      }
+      
+      let tx;
+      const mintFn = contract.getFunction(activeMintFunction?.name!);
+      
+      if (mintFn.fragment.inputs.length > 0) {
+        tx = await mintFn(quantity, options);
+      } else {
+        tx = await mintFn(options);
+      }
+      
+      addLog(`Mint transaction sent: ${tx.hash}`);
+      
+      const receipt = await tx.wait();
+      addLog(`Mint transaction confirmed! Gas used: ${receipt?.gasUsed?.toString() || 'unknown'}`);
+      
+      let tokenId: number | undefined = undefined;
+      if (receipt && receipt.logs) {
+        const transferLog = receipt.logs.find((log: { topics: string[] }) => 
+          log.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef' &&
+          log.topics[2] !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+        );
+        
+        if (transferLog && transferLog.topics[3]) {
+          tokenId = parseInt(transferLog.topics[3], 16);
+          addLog(`Minted token ID: ${tokenId}`);
+        }
+      }
+      
+      onSuccess(tokenId);
+    } catch (error) {
+      console.error("Mint error:", error);
+      
+      if (error instanceof Error) {
+        if (error.message.includes('insufficient funds')) {
+          onError("Insufficient funds for minting");
+        } else if (error.message.includes('user rejected')) {
+          onError("Transaction rejected by user");
+        } else {
+          onError(`Mint failed: ${error.message}`);
+        }
+      } else {
+        onError("Unknown error during mint");
+      }
+    } finally {
+      mintingInProgress.current = false;
+    }
+  };
+
+  // Monitor for mint readiness when active
+  useEffect(() => {
+    if (!isActive || !drop.contractAddress || !provider.current) {
       return;
     }
 
-    setStatus('minting');
-    setError(null);
-    addLog(`Executing mint function ${mintFunctionName}...`);
+    addLog("Starting mint monitoring...");
+    
+    const checkMintAvailability = async () => {
+      try {
+        if (!contractDeployed) {
+          const code = await provider.current!.getCode(drop.contractAddress);
+          if (code !== '0x') {
+            setContractDeployed(true);
+            addLog("Contract just deployed! Checking mint functions...");
+          }
+          return;
+        }
+        
+        if (!activeMintFunction) {
+          const functions = await detectMintFunctions(provider.current!, drop.contractAddress);
+          if (functions.length > 0) {
+            for (const func of functions) {
+              const isAccessible = await isMintFunctionAccessible(
+                provider.current!, 
+                drop.contractAddress,
+                func.name
+              );
+              
+              if (isAccessible) {
+                setActiveMintFunction(func);
+                addLog(`Found accessible mint function: ${func.name}`);
+                break;
+              }
+            }
+            
+            if (!activeMintFunction && functions.length > 0) {
+              setActiveMintFunction(functions[0]);
+              addLog(`Found mint function (may require special access): ${functions[0].name}`);
+            }
+          }
+          return;
+        }
 
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      
-      // Execute the mint
-      const receipt = await executeDirectMint(
-        provider,
-        drop.contractAddress,
-        mintFunctionName,
-        quantity,
-        maxPrice.toString()
-      );
-      
-      setTransactionHash(receipt.hash);
-      setStatus('success');
-      addLog(`✅ Mint successful! Transaction hash: ${receipt.hash}`);
-    } catch (error) {
-      console.error('Error executing mint:', error);
-      setError(`Error minting: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setStatus('error');
-      addLog(`❌ Mint failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }, [walletAddress, drop.contractAddress, quantity, maxPrice, addLog]);
+        if (contractDeployed && activeMintFunction && !mintingInProgress.current) {
+          addLog("Mint function is active! Attempting to mint...");
+          void executeMint();
+        } else if (activeMintFunction) {
+          try {
+            const isAccessible = await isMintFunctionAccessible(
+              provider.current!,
+              drop.contractAddress,
+              activeMintFunction.name
+            );
+            
+            if (isAccessible && !contractDeployed) {
+              setContractDeployed(true);
+              addLog("Mint function is now accessible!");
+            }
+          } catch (error) {
+            addLog("Still waiting for mint to become accessible");
+          }
+        }
+      } catch (error) {
+        console.error("Error in mint check:", error);
+      }
+    };
+
+    const intervalTime = getCheckFrequency();
+    checkMintAvailability();
+    
+    checkInterval.current = setInterval(checkMintAvailability, intervalTime);
+    addLog(`Monitoring mint every ${intervalTime/1000} seconds (based on gas settings)`);
+
+    return () => {
+      if (checkInterval.current) {
+        clearInterval(checkInterval.current);
+        checkInterval.current = null;
+      }
+    };
+  }, [isActive, drop.contractAddress, contractDeployed, activeMintFunction, onError, onLog]);
+
+  // Speed settings based on gas fee percentage
+  const getCheckFrequency = () => {
+    if (gasFeePercentage > 150) return 1000; // 1 second
+    if (gasFeePercentage > 100) return 2000; // 2 seconds
+    if (gasFeePercentage > 50) return 3000;  // 3 seconds
+    return 5000; // Default to 5 seconds
+  };
 
   return (
     <div className="p-4">
@@ -316,7 +467,7 @@ export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBac
               <div className="mt-4 flex flex-col space-y-2">
                 {status === 'idle' && (
                   <button
-                    onClick={() => startMonitoring()}
+                    onClick={startMonitoring}
                     disabled={!contractDeployed || !walletAddress}
                     className="px-4 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 disabled:bg-gray-400"
                   >
@@ -335,7 +486,7 @@ export const NFTSniper: React.FC<NFTSniperProps> = ({ drop, walletAddress, onBac
                 
                 {activeMintFunction && status !== 'minting' && status !== 'success' && (
                   <button
-                    onClick={() => executeMint(activeMintFunction.name)}
+                    onClick={executeMint}
                     disabled={!walletAddress}
                     className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
                   >

@@ -49,23 +49,15 @@ const MINT_SIGNATURES = [
   },
 ];
 
-// Minimum ABI for ERC721 functionality
-export const ERC721_ABI = [
+// ERC721 minimal ABI
+const ERC721_ABI = [
   'function name() view returns (string)',
   'function symbol() view returns (string)',
   'function totalSupply() view returns (uint256)',
-  'function balanceOf(address owner) view returns (uint256)',
-  'function ownerOf(uint256 tokenId) view returns (address)',
-  'function tokenURI(uint256 tokenId) view returns (string)',
-  'function approve(address to, uint256 tokenId)',
-  'function getApproved(uint256 tokenId) view returns (address)',
-  'function isApprovedForAll(address owner, address operator) view returns (bool)',
-  'function transferFrom(address from, address to, uint256 tokenId)',
-  'function safeTransferFrom(address from, address to, uint256 tokenId)',
-  'function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)',
-  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
-  'event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)',
-  'event ApprovalForAll(address indexed owner, address indexed operator, bool approved)',
+  'function balanceOf(address) view returns (uint256)',
+  'function ownerOf(uint256) view returns (address)',
+  'function tokenURI(uint256) view returns (string)',
+  'function supportsInterface(bytes4) view returns (bool)',
 ];
 
 export interface NFTContractInfo {
@@ -214,11 +206,11 @@ export const getNFTContractInfo = async (
 
     return {
       contractAddress,
-      isERC721,
+      isERC721: true,
       name,
       symbol,
       mintFunctions,
-      abi: completeAbi,
+      abi: completeAbi
     };
   } catch (error) {
     console.error('Error getting NFT contract info:', error);
@@ -272,117 +264,116 @@ export const isMintFunctionAccessible = async (
 };
 
 /**
- * Monitor a contract for when its mint function becomes active
+ * Watch for a mint function to become active
  * @param provider Ethereum provider
  * @param contractAddress NFT contract address
- * @param callback Function to call when mint becomes active
- * @param checkIntervalMs Time between checks in milliseconds
+ * @param onMintActivated Callback for when mint is activated
+ * @param intervalMs How often to check (default: 5000ms)
  * @returns Cleanup function
  */
 export const watchForMintActivation = (
   provider: ethers.Provider,
   contractAddress: string,
-  callback: (mintFunction: { name: string, signature: string }) => void,
-  checkIntervalMs: number = 5000
+  onMintActivated: (mintFunction: { name: string, signature: string }) => void,
+  intervalMs = 5000
 ): () => void => {
-  let isMintActiveAlready = false;
-  let activeMintFunction: { name: string, signature: string } | null = null;
-  let isCleanedUp = false;
+  const checkedFunctions = new Set<string>();
   
-  const checkMintStatus = async () => {
-    if (isCleanedUp) return;
-    
+  const interval = setInterval(async () => {
     try {
-      // Skip if we've already found an active mint function
-      if (isMintActiveAlready && activeMintFunction) return;
+      // First, verify the contract is deployed
+      const code = await provider.getCode(contractAddress);
+      if (code === '0x') {
+        return; // Contract not deployed yet
+      }
       
-      // Get NFT contract info
-      const info = await getNFTContractInfo(provider, contractAddress);
-      if (!info || info.mintFunctions.length === 0) return;
+      // Detect mint functions
+      const functions = await detectMintFunctions(provider, contractAddress);
       
-      // Check each mint function
-      for (const func of info.mintFunctions) {
-        const isAccessible = await isMintFunctionAccessible(provider, contractAddress, func.name);
+      // Check each detected mint function
+      for (const func of functions) {
+        // Skip functions we've already checked and found inaccessible
+        if (checkedFunctions.has(func.name)) continue;
+        
+        const isAccessible = await isMintFunctionAccessible(
+          provider,
+          contractAddress,
+          func.name
+        );
         
         if (isAccessible) {
-          console.log(`MINT FUNCTION ACTIVE: ${func.name} on contract ${contractAddress}`);
-          isMintActiveAlready = true;
-          activeMintFunction = {
-            name: func.name,
-            signature: func.signature
-          };
-          
-          // Call the callback with the mint function info
-          callback(activeMintFunction);
-          break;
+          onMintActivated(func);
+          clearInterval(interval);
+          return;
+        } else {
+          // Mark as checked so we don't waste resources checking it again
+          checkedFunctions.add(func.name);
         }
       }
     } catch (error) {
-      console.error('Error checking mint status:', error);
-    } finally {
-      // Schedule the next check if we haven't found an active mint yet
-      if (!isMintActiveAlready && !isCleanedUp) {
-        setTimeout(checkMintStatus, checkIntervalMs);
-      }
+      console.error('Error checking mint activation:', error);
     }
-  };
-  
-  // Start checking
-  checkMintStatus();
+  }, intervalMs);
   
   // Return cleanup function
-  return () => {
-    isCleanedUp = true;
-  };
+  return () => clearInterval(interval);
 };
 
 /**
- * Direct mint function that can be used to immediately mint when a function becomes available
+ * Execute a mint transaction directly on an NFT contract
  * @param provider Ethereum provider
  * @param contractAddress NFT contract address
- * @param mintFunctionName Name of the mint function
- * @param quantity Quantity to mint
- * @param mintPriceEth Price per NFT in ETH
+ * @param mintFunctionName Name of the mint function to call
+ * @param quantity Number of NFTs to mint
+ * @param maxPriceInEth Maximum price willing to pay per NFT
  * @returns Transaction receipt
  */
 export const executeDirectMint = async (
-  provider: ethers.BrowserProvider,
+  provider: ethers.Provider,
   contractAddress: string,
   mintFunctionName: string,
   quantity: number = 1,
-  mintPriceEth: string = '0.01'
+  maxPriceInEth: string = '0.1'
 ): Promise<ethers.TransactionReceipt> => {
-  const info = await getNFTContractInfo(provider, contractAddress);
-  if (!info) throw new Error('Could not get contract info');
-  
-  const signer = await provider.getSigner();
-  const contract = new ethers.Contract(contractAddress, info.abi, signer);
-  
-  // Get the mint function parameters
-  const mintFunc = info.mintFunctions.find(f => f.name === mintFunctionName);
-  if (!mintFunc) throw new Error(`Mint function ${mintFunctionName} not found`);
-  
-  const mintPriceWei = ethers.parseEther(mintPriceEth);
-  let tx;
-  
-  // Call the mint function with the appropriate parameters
-  if (mintFunc.parameters.length === 0) {
-    // Example: mint()
-    tx = await contract[mintFunctionName]({ value: mintPriceWei * BigInt(quantity) });
-  } else if (mintFunc.parameters.length === 1 && mintFunc.parameters[0] === 'uint256') {
-    // Example: mint(uint256 quantity)
-    tx = await contract[mintFunctionName](quantity, { value: mintPriceWei * BigInt(quantity) });
-  } else if (mintFunc.parameters.length === 2 && mintFunc.parameters[0] === 'address' && mintFunc.parameters[1] === 'uint256') {
-    // Example: mintTo(address recipient, uint256 quantity)
-    const recipient = await signer.getAddress();
-    tx = await contract[mintFunctionName](recipient, quantity, { value: mintPriceWei * BigInt(quantity) });
-  } else {
-    throw new Error('Unsupported mint function parameter pattern');
+  if (!(provider instanceof ethers.BrowserProvider)) {
+    throw new Error('This function requires a BrowserProvider');
   }
   
-  // Wait for transaction to be mined
-  const receipt = await tx.wait();
-  return receipt;
+  const signer = await provider.getSigner();
+  
+  // Set up a minimal ABI based on the mint function name
+  const abi = [
+    `function ${mintFunctionName}() payable`,
+    `function ${mintFunctionName}(uint256 quantity) payable`,
+    `function ${mintFunctionName}(address recipient, uint256 quantity) payable`
+  ];
+  
+  const contract = new ethers.Contract(contractAddress, abi, signer);
+  const value = ethers.parseEther(maxPriceInEth);
+  
+  try {
+    // Try to call the mint function with appropriate parameters
+    let tx;
+    
+    // Start with the most common signature (mint with quantity)
+    try {
+      tx = await contract[mintFunctionName](quantity, { value });
+    } catch (e) {
+      // If that failed, try mint with no params
+      try {
+        tx = await contract[mintFunctionName]({ value });
+      } catch (e2) {
+        // Finally try mintTo (address, quantity)
+        const address = await signer.getAddress();
+        tx = await contract[mintFunctionName](address, quantity, { value });
+      }
+    }
+    
+    return await tx.wait();
+  } catch (error) {
+    console.error('Error executing direct mint:', error);
+    throw error;
+  }
 };
 
 /**

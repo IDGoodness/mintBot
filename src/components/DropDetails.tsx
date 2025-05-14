@@ -329,7 +329,13 @@ export const DropDetails: React.FC<DropDetailsProps> = ({
   
   // Switch to NFTSniper component if in sniper mode
   if (viewMode === 'sniper') {
-    return <NFTSniper drop={drop} walletAddress={walletAddress} onBack={() => setViewMode('details')} />;
+    return <NFTSniper drop={drop} walletAddress={walletAddress} onBack={() => setViewMode('details')} onLog={function (): void {
+        throw new Error('Function not implemented.');
+    } } onSuccess={function (): void {
+        throw new Error('Function not implemented.');
+    } } onError={function (): void {
+        throw new Error('Function not implemented.');
+    } } isActive={false} gasFeePercentage={0} />;
   }
   
   return (

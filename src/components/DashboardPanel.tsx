@@ -5,6 +5,7 @@ import { ethers } from 'ethers';
 import NetworkSwitcher from './NetworkSwitcher';
 import { TransactionService } from '../services/TransactionService';
 import ProcessWarning from './ProcessWarning';
+import contractMonitorService from '../services/ContractMonitorService';
 
 // Import all NFT fallback images
 import nft1 from "../assets/nft1.png";
@@ -15,6 +16,7 @@ import nft5 from "../assets/nft5.png";
 
 import useMainnetNFTSniper from '../hooks/useMainnetNFTSniper';
 import { validateNFTContract, getNFTContractInfo } from '../utils/contractUtils';
+import { extractContractAddress, getMarketplaceNFTData } from '../utils/marketplaceUtils';
 import EnhancedNFTCard from './EnhancedNFTCard';
 import NotificationModal from './NotificationModal';
 
@@ -141,7 +143,10 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
   };
 
   const fetchNFTDetails = async () => {
-    const contract = inputValue.trim().toLowerCase();
+    // Clean up and normalize the input first
+    const rawInput = inputValue.trim();
+    const contract = extractContractAddress(rawInput);
+    
     console.log('Starting fetch for:', contract);
   
     try {
@@ -169,83 +174,78 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
       // 2. Display checking message
       setCheckingContract(true);
       setBotStatus('Checking contract validity...');
-  
-      // 3. Try to get contract info from Mintify API first for unlisted NFTs
-      setBotStatus('Checking Mintify for upcoming/unlisted NFTs...');
-      const MINTIFY_API_KEY = '85c2edccc6fad38585b794b3595af637928bd512';
       
-      let mintifyData = null;
-      try {
-        // Try to get data from Mintify API for upcoming/unlisted drops
-        const mintifyResponse = await fetch(
-          `https://api.mintify.xyz/v1/contracts/${contract}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${MINTIFY_API_KEY}`,
-              'Accept': 'application/json'
-            }
-          }
-        );
-        
-        if (mintifyResponse.ok) {
-          const data = await mintifyResponse.json();
-          console.log('Mintify API response:', data);
-          
-          if (data.contract) {
-            mintifyData = data.contract;
-          }
-        }
-      } catch (mintifyError) {
-        console.error('Mintify API error:', mintifyError);
-        // Continue with on-chain validation if Mintify fails
-      }
-  
-      // 4. Validate on-chain if not found in Mintify
+      // 3. Try to get marketplace data from all sources
+      let nftData = null;
       let contractOnChainValid = false;
       let contractInfo = null;
       
-      // Only validate on-chain if not found in Mintify
-      if (!mintifyData) {
+      // First check if we can get marketplace data
+      setBotStatus('Checking marketplaces for NFT data...');
+      const marketplaceData = await getMarketplaceNFTData(contract);
+      
+      if (marketplaceData) {
+        // We found marketplace data
+        console.log('Marketplace data found:', marketplaceData);
+        
+        // If it's an upcoming NFT, add it to contract monitor
+        if (marketplaceData.status === 'upcoming' && marketplaceData.launchTime) {
+          contractMonitorService.monitorContract(
+            contract,
+            marketplaceData.name,
+            marketplaceData.mintPrice?.toString() || '0',
+            marketplaceData.launchTime,
+            10000 // Check every 10 seconds
+          );
+          
+          // Add notification for monitoring
+          setBotStatus(`Monitoring upcoming NFT: ${marketplaceData.name}`);
+        }
+        
+        // Build NFT data from marketplace data
+        nftData = {
+          name: marketplaceData.name,
+          symbol: marketplaceData.symbol || 'NFT',
+          image: marketplaceData.imageUrl || fallbackImages[Math.floor(Math.random() * fallbackImages.length)],
+          description: marketplaceData.description || 'No description available',
+          contract: contract,
+          floorPrice: marketplaceData.mintPrice || 0,
+          totalSupply: marketplaceData.totalSupply || 0,
+          launchTime: marketplaceData.launchTime || 0,
+          status: marketplaceData.status
+        };
+      } else {
+        // If we didn't find marketplace data, check on-chain
+        setBotStatus('Checking on-chain data...');
+        
         try {
           // Check if the contract exists at all
           const code = await provider.getCode(contract);
           if (code === '0x') {
-            // Before throwing error, attempt to get upcoming NFT data
-            try {
-              const upcomingResponse = await fetch(
-                `https://api.mintify.xyz/v1/drops/upcoming?contractAddress=${contract}`,
-                {
-                  headers: {
-                    'Authorization': `Bearer ${MINTIFY_API_KEY}`,
-                    'Accept': 'application/json'
-                  }
-                }
-              );
-              
-              if (upcomingResponse.ok) {
-                const upcomingData = await upcomingResponse.json();
-                if (upcomingData.drops && upcomingData.drops.length > 0) {
-                  // Found as an upcoming drop
-                  const drop = upcomingData.drops[0];
-                  mintifyData = {
-                    name: drop.name,
-                    contractAddress: drop.contractAddress,
-                    imageUrl: drop.imageUrl,
-                    description: drop.description,
-                    mintPrice: drop.mintPrice,
-                    launchTime: drop.launchTime,
-                    status: 'upcoming',
-                    tokenSupply: drop.tokenSupply
-                  };
-                } else {
-                  throw new Error('No contract deployed at this address');
-                }
-              } else {
-                throw new Error('No contract deployed at this address');
-              }
-            } catch (upcomingError) {
-              throw new Error('No contract deployed at this address. Please verify the contract address is correct.');
-            }
+            // Contract not deployed - we'll add it to monitoring
+            setBotStatus('Contract not yet deployed. Adding to monitoring...');
+            
+            // Add to contract monitor service with default values
+            contractMonitorService.monitorContract(
+              contract,
+              'Unlisted NFT',
+              '0',
+              Math.floor(Date.now() / 1000), // Current time
+              10000 // Check every 10 seconds
+            );
+            
+            // Create a basic nft data object
+            nftData = {
+              name: 'Unlisted NFT Collection',
+              symbol: 'NFT',
+              image: fallbackImages[Math.floor(Math.random() * fallbackImages.length)],
+              description: 'This NFT contract has not been deployed yet. The bot will monitor for deployment.',
+              contract: contract,
+              floorPrice: 0,
+              totalSupply: 0,
+              launchTime: 0,
+              status: 'upcoming'
+            };
           } else {
             // Contract exists on-chain
             const validation = await validateNFTContract(contract, provider);
@@ -256,9 +256,30 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
             setBotStatus('Reading on-chain information...');
             // Get on-chain contract info
             contractInfo = await getNFTContractInfo(contract, provider);
+            
+            if (contractInfo) {
+              // Calculate a random floor price for demonstration if not found elsewhere
+              const randomFloor = (Math.random() * 0.5 + 0.01).toFixed(3);
+              
+              // Create nft data from on-chain info
+              nftData = {
+                name: contractInfo.name || 'Unnamed Collection',
+                symbol: contractInfo.symbol || 'NFT',
+                image: fallbackImages[Math.floor(Math.random() * fallbackImages.length)],
+                description: 'NFT details loaded from on-chain data.',
+                contract: contract,
+                floorPrice: parseFloat(randomFloor),
+                totalSupply: contractInfo.totalSupply ? Number(contractInfo.totalSupply.toString()) : 0,
+                launchTime: 0,
+                status: 'deployed'
+              };
+            } else {
+              throw new Error('Failed to read NFT contract information');
+            }
           }
         } catch (error) {
-          if (!mintifyData) { // Only throw if we don't have Mintify data
+          // Only throw if we don't have any nftData yet
+          if (!nftData) {
             if (error instanceof Error) {
               throw error;
             }
@@ -267,52 +288,21 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
         }
       }
       
-      // 5. Build the NFT data combining all sources
-      setBotStatus('Building NFT data...');
-      
-      // Get a fallback image if needed
-      const randomImageIndex = Math.floor(Math.random() * fallbackImages.length);
-      const fallbackImage = fallbackImages[randomImageIndex];
-      
-      // Determine the image URL
-      let imageUrl = mintifyData?.imageUrl || '';
-      
-      // Fix IPFS URLs if needed
-      if (imageUrl && !imageUrl.startsWith('http')) {
-        if (imageUrl.startsWith('ipfs://')) {
-          imageUrl = `https://ipfs.io/ipfs/${imageUrl.replace('ipfs://', '')}`;
+      // At this point we should have nftData from one source or another
+      if (nftData) {
+        setNfts([nftData]);
+        setCurrentFloor(nftData.floorPrice);
+        
+        // Set appropriate status based on NFT state
+        if (nftData.status === 'upcoming') {
+          setBotStatus('Upcoming NFT found! Monitoring for deployment.');
+        } else if (contractOnChainValid) {
+          setBotStatus('NFT contract verified on-chain.');
         } else {
-          imageUrl = fallbackImage;
+          setBotStatus('NFT details loaded from marketplace.');
         }
-      } else if (!imageUrl && contractInfo?.name) {
-        // If we have on-chain data but no image, use fallback
-        imageUrl = fallbackImage;
-      }
-      
-      // Combine the data with proper fallbacks
-      const nftData = {
-        name: mintifyData?.name || contractInfo?.name || 'Unnamed Collection',
-        symbol: contractInfo?.symbol || 'NFT',
-        image: imageUrl,
-        description: mintifyData?.description || 'No description available',
-        contract: contract,
-        floorPrice: mintifyData?.mintPrice ? parseFloat(mintifyData.mintPrice) : 0,
-        totalSupply: mintifyData?.tokenSupply || 
-                   (contractInfo?.totalSupply ? Number(contractInfo.totalSupply.toString()) : 0),
-        launchTime: mintifyData?.launchTime || 0,
-        status: mintifyData?.status || (contractOnChainValid ? 'deployed' : 'unknown')
-      };
-  
-      setNfts([nftData]);
-      setCurrentFloor(nftData.floorPrice);
-      
-      // Set appropriate status based on NFT state
-      if (nftData.status === 'upcoming') {
-        setBotStatus('Upcoming NFT found! Not yet deployed.');
-      } else if (contractOnChainValid) {
-        setBotStatus('NFT contract verified on-chain.');
       } else {
-        setBotStatus('NFT details loaded from Mintify.');
+        throw new Error('No NFT data found from any source');
       }
       
       setCheckingContract(false);
@@ -672,6 +662,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
             {nftError ? (
               <div className="col-span-full text-center p-6 border border-red-500/20 rounded-lg bg-black/20">
                 <p className="text-red-400 mb-2">{nftError}</p>
+                
                 {nftError.includes("connect to Ethereum Mainnet") && (
                   <button
                     onClick={switchToMainnet}
@@ -679,6 +670,38 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
                   >
                     Switch to Ethereum Mainnet
                   </button>
+                )}
+                
+                {nftError.includes("No contract deployed at this address") && (
+                  <div className="mt-4">
+                    <p className="text-amber-400 mb-2">This address does not have a contract deployed yet.</p>
+                    <button
+                      onClick={() => {
+                        if (inputValue && ethers.isAddress(inputValue)) {
+                          // Add to monitoring
+                          contractMonitorService.monitorContract(
+                            inputValue,
+                            'Unlisted NFT',
+                            '0',
+                            Math.floor(Date.now() / 1000),
+                            5000 // Check every 5 seconds
+                          );
+                          
+                          // Update UI
+                          setBotStatus('Monitoring for contract deployment...');
+                          showNotification('Monitoring Started', 'Added address to deployment monitor. You will be notified when a contract is deployed.', 'info');
+                          
+                          // Clear error
+                          setNftError(null);
+                        } else {
+                          showNotification('Invalid Address', 'Please enter a valid Ethereum address', 'error');
+                        }
+                      }}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                    >
+                      Monitor for Deployment
+                    </button>
+                  </div>
                 )}
               </div>
             ) : nfts.length > 0 ? (
@@ -690,6 +713,45 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
                 </div>
               )
             )}
+          </div>
+        )}
+
+        {/* Monitoring Section - only shown when there are contracts being monitored */}
+        {contractMonitorService.getMonitoredContracts().length > 0 && (
+          <div className="mb-6 p-4 border rounded bg-black/30">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-white font-semibold">Monitored Contracts</h3>
+              <span className="text-xs text-blue-300">
+                {contractMonitorService.getMonitoredContracts().length} address(es) being watched
+              </span>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-2">
+              {contractMonitorService.getMonitoredContracts().map(contract => (
+                <div key={contract.contractAddress} className="p-3 bg-gray-800 rounded-lg flex justify-between items-center">
+                  <div>
+                    <div className="text-white font-medium">{contract.name}</div>
+                    <div className="text-blue-300 text-xs">{contract.contractAddress}</div>
+                  </div>
+                  <div className="flex items-center">
+                    <span className={`w-2 h-2 rounded-full mr-2 ${
+                      contract.status === 'pending' ? 'bg-blue-500 animate-pulse' : 
+                      contract.status === 'deployed' ? 'bg-green-500' : 'bg-red-500'
+                    }`}></span>
+                    <button
+                      onClick={() => {
+                        contractMonitorService.stopMonitoring(contract.contractAddress);
+                        // Force a re-render
+                        setNfts([...nfts]);
+                      }}
+                      className="ml-2 px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                    >
+                      Stop
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

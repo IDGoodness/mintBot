@@ -29,19 +29,125 @@ const NFT_SNIPER_ABI = [
 export const NFT_SNIPER_ADDRESS = '0x8464135c8F25Da09e49BC8782676a84730C318bC'; // Updated to your actual deployed contract address
 
 /**
- * Check if a target NFT contract exists
- * @param provider Ethereum provider
- * @param contractAddress The NFT contract address to check
- * @returns Whether the contract is deployed
+ * Check if a target contract is deployed at the specified address
+ * @param provider The ethers provider to use
+ * @param contractAddress The address to check for a contract
+ * @returns True if a contract is deployed, false otherwise
  */
-export const isTargetContractDeployed = async (provider: ethers.Provider, contractAddress: string): Promise<boolean> => {
+export const isTargetContractDeployed = async (
+  provider: ethers.Provider,
+  contractAddress: string
+): Promise<boolean> => {
   try {
+    if (!contractAddress || !ethers.isAddress(contractAddress)) {
+      console.error(`Invalid address: ${contractAddress}`);
+      return false;
+    }
+
     const code = await provider.getCode(contractAddress);
-    return code !== '0x';
+    return code !== '0x' && code !== '';
   } catch (error) {
-    console.error('Error checking if target contract is deployed:', error);
+    console.error(`Error checking contract deployment at ${contractAddress}:`, error);
     return false;
   }
+};
+
+/**
+ * Continuously poll an address for contract deployment
+ * @param provider The ethers provider to use
+ * @param contractAddress The address to check
+ * @param onDeployed Callback function to execute when contract is deployed
+ * @param checkInterval Interval between checks in milliseconds (default: 5000ms)
+ * @returns A function to stop the polling
+ */
+export const pollForContractDeployment = (
+  provider: ethers.Provider,
+  contractAddress: string,
+  onDeployed: (contractAddress: string) => void,
+  checkInterval = 5000
+): (() => void) => {
+  if (!contractAddress || !ethers.isAddress(contractAddress)) {
+    console.error(`Invalid address to poll: ${contractAddress}`);
+    return () => {};
+  }
+
+  let isDeployed = false;
+  const interval = setInterval(async () => {
+    if (isDeployed) {
+      clearInterval(interval);
+      return;
+    }
+
+    try {
+      const deployed = await isTargetContractDeployed(provider, contractAddress);
+      if (deployed) {
+        isDeployed = true;
+        console.log(`Contract detected at ${contractAddress}!`);
+        onDeployed(contractAddress);
+        clearInterval(interval);
+      }
+    } catch (error) {
+      console.error(`Error polling contract at ${contractAddress}:`, error);
+    }
+  }, checkInterval);
+
+  // Return function to stop polling
+  return () => {
+    clearInterval(interval);
+  };
+};
+
+/**
+ * Watch multiple addresses for contract deployment
+ * @param provider The ethers provider to use
+ * @param addresses Array of addresses to watch
+ * @param onDeployed Callback function executed when any contract is deployed
+ * @param checkInterval Interval between checks in milliseconds (default: 5000ms)
+ * @returns A function to stop watching all addresses
+ */
+export const watchMultipleAddresses = (
+  provider: ethers.Provider,
+  addresses: string[],
+  onDeployed: (contractAddress: string) => void,
+  checkInterval = 5000
+): (() => void) => {
+  const stopFunctions: Array<() => void> = [];
+
+  // Start polling for each address
+  for (const address of addresses) {
+    if (ethers.isAddress(address)) {
+      const stopPolling = pollForContractDeployment(
+        provider,
+        address,
+        onDeployed,
+        checkInterval
+      );
+      stopFunctions.push(stopPolling);
+    }
+  }
+
+  // Return function to stop all polling
+  return () => {
+    for (const stopFn of stopFunctions) {
+      stopFn();
+    }
+  };
+};
+
+/**
+ * Estimate when an unlisted NFT contract will be deployed based on trends
+ * @param contractAddress The contract address to analyze
+ * @returns Estimated time in seconds until deployment, or null if unknown
+ */
+export const estimateContractDeploymentTime = async (contractAddress: string): Promise<number | null> => {
+  // In a real implementation, this would analyze blockchain trends
+  // and make an educated guess about deployment time
+  // For now, we'll return a random time between 10 minutes and 24 hours
+  const minTime = 10 * 60; // 10 minutes in seconds
+  const maxTime = 24 * 60 * 60; // 24 hours in seconds
+  console.log(contractAddress)
+  
+  return Math.floor(Math.random() * (maxTime - minTime)) + minTime;
 };
 
 /**

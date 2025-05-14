@@ -58,10 +58,15 @@ function App() {
       case 'sniper':
         return selectedDrop ? (
           <NFTSniper 
-            drop={selectedDrop} 
-            walletAddress={walletAddress} 
-            onBack={() => setViewMode('upcoming')} 
-          />
+            drop={selectedDrop}
+            walletAddress={walletAddress}
+            onBack={() => setViewMode('upcoming')} onLog={function (): void {
+              throw new Error('Function not implemented.');
+            } } onSuccess={function (): void {
+              throw new Error('Function not implemented.');
+            } } onError={function (): void {
+              throw new Error('Function not implemented.');
+            } } isActive={false} gasFeePercentage={0}          />
         ) : (
           <UpcomingDrops onSelectDrop={handleSelectDrop} walletAddress={walletAddress} onSnipe={handleGoToSniper} />
         );
@@ -107,10 +112,15 @@ function App() {
             <Route path="/sniper" element={
               selectedDrop ? (
                 <NFTSniper 
-                  drop={selectedDrop} 
-                  walletAddress={walletAddress} 
-                  onBack={() => setViewMode('upcoming')} 
-                />
+                  drop={selectedDrop}
+                  walletAddress={walletAddress}
+                  onBack={() => setViewMode('upcoming')} onLog={function (): void {
+                    throw new Error('Function not implemented.');
+                  } } onSuccess={function (): void {
+                    throw new Error('Function not implemented.');
+                  } } onError={function (): void {
+                    throw new Error('Function not implemented.');
+                  } } isActive={false} gasFeePercentage={0}                />
               ) : (
                 <UpcomingDrops onSelectDrop={handleGoToSniper} walletAddress={walletAddress} />
               )
