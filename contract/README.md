@@ -105,13 +105,129 @@ forge test
 
 ```bash
 source .env
-forge script script/DeployNFTSniping.s.sol --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
+forge create --rpc-url $RPC_URL --private-key $PRIVATE_KEY src/NFTSniper.sol:NFTSniper
 ```
-
-## Integration with Frontend
-
-The frontend can interact with these contracts using ethers.js. See the `useNFTMintWatcher.ts` hook for an example integration.
 
 ## License
 
 MIT
+
+# NFTSniper Contract Deployment
+
+This document provides instructions for deploying the NFTSniper contract to Ethereum networks using Foundry.
+
+## Prerequisites
+
+1. [Foundry](https://book.getfoundry.sh/getting-started/installation) installed
+2. An Ethereum wallet with ETH for deployment gas (Metamask, etc.)
+3. Access to an Ethereum node or RPC provider (Infura, Alchemy, etc.)
+
+## Deployment Steps
+
+### 1. Install Foundry
+
+If you haven't installed Foundry yet, run:
+
+```bash
+curl -L https://foundry.paradigm.xyz | bash
+foundryup
+```
+
+### 2. Clone and Build
+
+Clone the repository and build the contracts:
+
+```bash
+git clone <repository-url>
+cd contract
+forge build
+```
+
+### 3. Configure Environment Variables
+
+Create a `.env` file in the contract directory:
+
+```bash
+# Private key of the wallet you want to deploy from (without 0x prefix)
+PRIVATE_KEY=your_private_key_here
+
+# RPC URL of the Ethereum network you want to deploy to
+RPC_URL=your_rpc_url_here
+```
+
+Then load the environment variables:
+
+```bash
+source .env
+```
+
+### 4. Deploy the Contract
+
+Use Foundry's `forge create` command to deploy:
+
+```bash
+forge create --rpc-url $RPC_URL --private-key $PRIVATE_KEY src/NFTSniper.sol:NFTSniper
+```
+
+This will output the deployed contract address. Copy this address and update it in your frontend code:
+
+1. Open `src/utils/contractIntegration.ts`
+2. Find the line with `const NFT_SNIPER_ADDRESS = '...'`
+3. Replace it with your newly deployed contract address
+
+### 5. Verify the Contract (Optional)
+
+If you're deploying to a network with Etherscan support, verify your contract:
+
+```bash
+forge verify-contract --chain-id <CHAIN_ID> --compiler-version <VERSION> <DEPLOYED_ADDRESS> src/NFTSniper.sol:NFTSniper <ETHERSCAN_API_KEY>
+```
+
+Replace:
+- `<CHAIN_ID>` with the chain ID (e.g., 1 for Ethereum mainnet)
+- `<VERSION>` with the compiler version (e.g., 0.8.19)
+- `<DEPLOYED_ADDRESS>` with your contract's address
+- `<ETHERSCAN_API_KEY>` with your Etherscan API key
+
+## Deployment to Different Networks
+
+### Ethereum Mainnet
+
+```bash
+forge create --rpc-url https://mainnet.infura.io/v3/your_infura_key --private-key $PRIVATE_KEY src/NFTSniper.sol:NFTSniper
+```
+
+### Sepolia Testnet
+
+```bash
+forge create --rpc-url https://sepolia.infura.io/v3/your_infura_key --private-key $PRIVATE_KEY src/NFTSniper.sol:NFTSniper
+```
+
+### Local Anvil Node
+
+Start a local Anvil node in a separate terminal:
+
+```bash
+anvil
+```
+
+Then deploy to the local node:
+
+```bash
+forge create --rpc-url http://localhost:8545 --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 src/NFTSniper.sol:NFTSniper
+```
+
+## Handling Upcoming NFT Collections
+
+For NFT collections that are not yet deployed (like the SEEDS collection that launches on May 15th), our system:
+
+1. Registers the contract address for monitoring
+2. Once the contract is deployed, automatically detects it
+3. Sets up the sniping configuration
+4. Executes the mint transaction as soon as the collection goes live
+
+The frontend will show appropriate information for upcoming drops, including the time remaining until launch.
+
+## Troubleshooting
+
+If you encounter the error "No contract deployed at this address", this is expected for NFTs that haven't launched yet, like the SEEDS collection. The system will handle this correctly by setting up monitoring instead of immediate minting.
