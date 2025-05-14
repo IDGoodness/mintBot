@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import { createFeeTransferTransaction, verifyFeeTransfer } from '../utils/feeUtils';
 import { transferNFT, verifyNFTOwnership } from '../utils/nftTransferUtils';
+import { detectMintFunctions, isMintFunctionAccessible } from '../utils/nftDetection';
 
 // Add supported networks
 const SUPPORTED_NETWORKS = {
@@ -1151,6 +1152,101 @@ export const useMainnetNFTSniper = (
       onError(error instanceof Error ? error.message : 'Unknown error in post-mint operations');
     }
   };
+
+  // Add continuous checking for mint activation
+  useEffect(() => {
+    if (!contractAddress || !isActive || !walletAddress || !provider || !signer) {
+      return;
+    }
+
+    console.log('Starting to watch for mint activation on', contractAddress);
+    onWatching();
+
+    const checkInterval = setInterval(async () => {
+      try {
+        // Check if contract is deployed
+        const isDeployed = await provider.getCode(contractAddress);
+        if (isDeployed === '0x') {
+          console.log('Contract not yet deployed, waiting...');
+          return;
+        }
+        
+        // Check for available mint functions
+        const mintFunctions = await detectMintFunctions(provider, contractAddress);
+        if (mintFunctions.length === 0) {
+          console.log('No mint functions detected yet, waiting...');
+          return;
+        }
+        
+        // Check each mint function for accessibility
+        for (const func of mintFunctions) {
+          const isAccessible = await isMintFunctionAccessible(
+            provider,
+            contractAddress,
+            func.name
+          );
+          
+          if (isAccessible) {
+            console.log(`Mint function ${func.name} is now accessible! Auto-minting...`);
+            onWatching();
+            
+            // Since attemptMint is scoped to this hook, we need to create a transaction directly
+            try {
+              // Create a contract instance with the detected function
+              const contract = new ethers.Contract(
+                contractAddress,
+                [`function ${func.name}(uint256) payable`],
+                signer
+              );
+              
+              // Calculate gas price with percentage boost
+              const currentGasPrice = await provider.getFeeData();
+              const boostMultiplier = BigInt(Math.floor((100 + gasFeePercentage)));
+              const gasPrice = (currentGasPrice.gasPrice || BigInt(30000000000)) * 
+                              boostMultiplier / BigInt(100);
+                              
+              // Estimate mint price - try with 0.1 ETH as fallback
+              const mintPrice = ethers.parseEther("0.1"); 
+              
+              // Execute the transaction
+              const tx = await contract[func.name](1, {
+                value: mintPrice,
+                gasPrice,
+                gasLimit: 500000 // Safe gas limit for most mint functions
+              });
+              
+              console.log(`Mint transaction sent: ${tx.hash}`);
+              
+              // Wait for transaction confirmation
+              const receipt = await tx.wait();
+              
+              if (receipt && receipt.status === 1) {
+                console.log(`Mint successful!`);
+                onSuccess();
+              } else {
+                throw new Error("Transaction failed");
+              }
+            } catch (error) {
+              console.error(`Auto-mint failed:`, error);
+              onError(`Failed to auto-mint: ${error instanceof Error ? error.message : String(error)}`);
+            }
+            
+            // Clear the interval since we've attempted the mint
+            clearInterval(checkInterval);
+            return;
+          }
+        }
+        
+        console.log('No accessible mint functions yet, continuing to watch...');
+      } catch (error) {
+        console.error('Error checking mint activation:', error);
+      }
+    }, 3000); // Check every 3 seconds
+    
+    return () => {
+      clearInterval(checkInterval);
+    };
+  }, [contractAddress, isActive, walletAddress, provider, signer, onWatching, onSuccess, onError, gasFeePercentage]);
 
   return {
     switchNetwork,

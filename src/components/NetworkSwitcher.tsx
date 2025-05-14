@@ -26,6 +26,17 @@ const SUPPORTED_NETWORKS: Network[] = [
     }
   },
   {
+    chainId: '0x2105',
+    name: 'Base',
+    rpcUrl: 'https://mainnet.base.org',
+    blockExplorer: 'https://basescan.org',
+    currency: {
+      name: 'Ethereum',
+      symbol: 'ETH',
+      decimals: 18
+    }
+  },
+  {
     chainId: '0x89',
     name: 'Polygon',
     rpcUrl: 'https://polygon-rpc.com',

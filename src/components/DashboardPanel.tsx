@@ -34,7 +34,6 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
   walletAddress,
   onProcessingChange,
 }) => {
-  const navigate = useNavigate();
   const [currentNetwork, setCurrentNetwork] = useState<any>(null);
   const transactionService = useRef<TransactionService | null>(null);
 
@@ -515,16 +514,6 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
     onProcessingChange(false); // Hide the warning message
   };
 
-  const handleConfirm = () => {
-    navigate('/confirmation', {
-      state: { 
-        gasFeePercentage: gasFee, 
-        ethCost: adjustedGasFee,
-        contractAddress: inputValue
-      },
-    });
-  };
-
   useEffect(() => {
     if (contractAddress) setAddress(contractAddress);
   }, [contractAddress]);
@@ -612,25 +601,30 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
       const result = await transactionService.current.handleSuccessfulSnipe(
         inputValue,
         tokenId,
-        ethers.parseEther(adjustedGasFee.toString()),
         walletAddress
       );
 
-      // Navigate to success page with transaction details
-      navigate('/success', {
-        state: {
-          transactionDetails: {
-            ...result,
-            tokenId,
-            contractAddress: inputValue
-          }
-        }
-      });
+      if (result.success) {
+        // Show success notification
+        showNotification(
+          'Success!', 
+          `Successfully sniped NFT #${tokenId} from contract ${shortenAddress(inputValue)}`, 
+          'success'
+        );
+        
+        // Update UI
+        setBotStatus('NFT successfully sniped!');
+        setMintSuccess(true);
+      } else {
+        throw new Error('NFT transfer failed');
+      }
     } catch (error) {
       console.error('Error handling successful snipe:', error);
       showNotification('Error', 'Failed to process successful snipe', 'error');
     } finally {
       onProcessingChange(false);
+      // Deactivate bot after successful or failed snipe
+      deactivateBot();
     }
   };
 
@@ -638,6 +632,21 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
     <div className="relative flex flex-col items-center justify-center min-h-screen bg-[#0f172a] overflow-hidden text-white p-6">
       {/* Process Warning */}
       <ProcessWarning isVisible={botActive} />
+
+      {/* Monitoring Indicator */}
+      {contractMonitorService.getMonitoredContracts().length > 0 && (
+        <div className="fixed top-0 left-0 right-0 bg-blue-600 py-2 text-center z-50 flex items-center justify-center">
+          <div className="w-3 h-3 bg-blue-300 rounded-full mr-2 animate-pulse"></div>
+          <span className="font-medium">
+            Monitoring {contractMonitorService.getMonitoredContracts().length} contract(s) for deployment
+          </span>
+          {contractMonitorService.getMonitoredContracts().some(c => c.autoActivate) && (
+            <span className="ml-2 bg-green-700 text-green-100 px-2 py-0.5 rounded-full text-xs">
+              Auto-Activation Enabled
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Simple modal rendering - only keep for errors and loading states */}
       {showModal && (
@@ -930,14 +939,6 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
             </div>
           </>
         )}
-
-        {/* Confirm */}
-        <button
-          onClick={handleConfirm}
-          className="w-full py-3 px-4 rounded-full text-white bg-indigo-600 hover:bg-indigo-700 transition-all text-lg font-semibold"
-        >
-          Confirm & Proceed
-        </button>
 
         {/* Status */}
         <div className="mt-4 text-sm text-blue-400 text-center">
