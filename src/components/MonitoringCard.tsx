@@ -149,6 +149,16 @@ const MonitoringCard: React.FC<MonitoringCardProps> = ({ contract, onUnmonitor }
           </span>
         </div>
         
+        {contract.autoActivate && (
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-gray-300 text-sm">Bot Action:</span>
+            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-900 text-green-200">
+              <span className="w-2 h-2 bg-green-400 rounded-full mr-1 animate-pulse"></span>
+              Auto-Activate
+            </span>
+          </div>
+        )}
+        
         <div className="flex justify-between items-center mb-3">
           <span className="text-gray-300 text-sm">Last Checked:</span>
           <span className="text-gray-200 text-xs">

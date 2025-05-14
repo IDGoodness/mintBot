@@ -201,6 +201,12 @@ class ContractMonitorService {
 
         // Notify callbacks
         this.notifyDeployment(contract);
+        
+        // Trigger auto-activation if enabled
+        if (contract.autoActivate) {
+          console.log(`Auto-activating bot for newly deployed contract ${contractAddress}`);
+          this.triggerAutoActivation(contract);
+        }
       }
     } catch (error) {
       console.error(`Error checking contract deployment for ${contractAddress}:`, error);

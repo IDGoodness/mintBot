@@ -101,6 +101,28 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
     };
 
     initTransactionService();
+    
+    // Setup auto-activation callback
+    contractMonitorService.setAutoActivationCallback((contract) => {
+      console.log(`Auto-activation triggered for contract: ${contract.contractAddress}`);
+      // Update UI to reflect auto-activation
+      setBotStatus(`Contract ${contract.name} deployed! Auto-activating bot...`);
+      
+      // Wait a moment to let the user see what's happening
+      setTimeout(() => {
+        // Use the address from the deployed contract
+        setInputValue(contract.contractAddress);
+        
+        // Activate the bot
+        activateBot(contract.contractAddress, true);
+      }, 1500);
+    });
+    
+    return () => {
+      if (activationIntervalRef.current) {
+        clearInterval(activationIntervalRef.current);
+      }
+    };
   }, []);
 
   useMainnetNFTSniper(
@@ -346,15 +368,17 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
     }
   };
 
-  const activateBot = () => {
-    if (!inputValue || !gasFee) {
+  const activateBot = (contractAddressOverride?: string, isAutoActivated = false) => {
+    const addressToUse = contractAddressOverride || inputValue;
+    
+    if (!addressToUse || !gasFee) {
       setNftError("Please enter a contract address and set gas fee first.");
       showNotification('Missing Information', 'Please enter a contract address and set gas fee first.', 'error');
       return;
     }
     
     // Validate contract address
-    if (!ethers.isAddress(inputValue)) {
+    if (!ethers.isAddress(addressToUse)) {
       setNftError("Please enter a valid Ethereum contract address.");
       showNotification('Invalid Address', 'Please enter a valid Ethereum contract address.', 'error');
       return;
@@ -375,16 +399,18 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
     
     // Show loading state
     setActivationLoading(true);
-    setBotStatus('Initializing bot...');
+    setBotStatus(isAutoActivated ? 'Auto-activating bot...' : 'Initializing bot...');
     
-    // Show loading modal during initialization only
-    showNotification('Initializing', 'Bot is being initialized...', 'loading');
+    // Show loading modal during initialization only (skip for auto-activation)
+    if (!isAutoActivated) {
+      showNotification('Initializing', 'Bot is being initialized...', 'loading');
+    }
     
     // Validate the contract before activating
     const validateContract = async () => {
       try {
         const provider = new ethers.BrowserProvider(window.ethereum);
-        const validation = await validateNFTContract(inputValue, provider);
+        const validation = await validateNFTContract(addressToUse, provider);
         
         if (!validation.valid) {
           setActivationLoading(false);
@@ -714,18 +740,23 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
                     <button
                       onClick={() => {
                         if (inputValue && ethers.isAddress(inputValue)) {
-                          // Add to monitoring
+                          // Add to monitoring with auto-activation enabled
                           contractMonitorService.monitorContract(
                             inputValue,
                             'Unlisted NFT',
                             '0',
                             Math.floor(Date.now() / 1000),
-                            5000 // Check every 5 seconds
+                            5000, // Check every 5 seconds
+                            true  // Enable auto-activation
                           );
                           
                           // Update UI
-                          setBotStatus('Monitoring for contract deployment...');
-                          showNotification('Monitoring Started', 'Added address to deployment monitor. You will be notified when a contract is deployed.', 'info');
+                          setBotStatus('Monitoring for contract deployment with auto-activation enabled...');
+                          showNotification(
+                            'Auto-Monitoring Started', 
+                            'Added address to deployment monitor. Bot will automatically activate when the contract is deployed.', 
+                            'info'
+                          );
                           
                           // Clear error
                           setNftError(null);
@@ -735,7 +766,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
                       }}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                     >
-                      Monitor for Deployment
+                      Monitor & Auto-Activate
                     </button>
                   </div>
                 )}
@@ -830,7 +861,7 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
               
               <div className="flex gap-3">
                 <button
-                  onClick={activateBot}
+                  onClick={() => activateBot()}
                   disabled={botActive || activationLoading}
                   className={`flex-1 py-2 px-4 rounded flex items-center justify-center ${
                     botActive ? 'bg-green-600 text-white cursor-not-allowed' : 
@@ -871,17 +902,22 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
                         'Unlisted NFT',
                         '0',
                         Math.floor(Date.now() / 1000),
-                        5000 // Check every 5 seconds
+                        5000, // Check every 5 seconds
+                        true  // Enable auto-activation
                       );
                       
                       // Update UI
                       setShowMonitorOption(false);
-                      setBotStatus('Monitoring for contract deployment...');
-                      showNotification('Monitoring Started', 'Added address to deployment monitor. You will be notified when a contract is deployed.', 'info');
+                      setBotStatus('Monitoring for contract deployment with auto-activation enabled...');
+                      showNotification(
+                        'Auto-Monitoring Started', 
+                        'Added address to deployment monitor. Bot will automatically activate when the contract is deployed.', 
+                        'info'
+                      );
                     }}
                     className="w-full py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700"
                   >
-                    Monitor for Deployment
+                    Monitor & Auto-Activate
                   </button>
                 </div>
               )}
