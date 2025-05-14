@@ -89,6 +89,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
   // Add a new state to track connection status
   const [networkStatus, setNetworkStatus] = useState<'connected'|'connecting'|'error'>('connecting');
 
+  const [showMonitorOption, setShowMonitorOption] = useState<boolean>(false);
+
   useEffect(() => {
     const initTransactionService = async () => {
       if (window.ethereum) {
@@ -363,6 +365,9 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
       setNftError(null);
     }
     
+    // Reset monitor option
+    setShowMonitorOption(false);
+    
     // Clear any existing interval
     if (activationIntervalRef.current) {
       clearInterval(activationIntervalRef.current);
@@ -384,14 +389,37 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
         if (!validation.valid) {
           setActivationLoading(false);
           setNftError(validation.reason || 'Invalid NFT contract');
-          setBotStatus('Error: Invalid contract');
           
-          // Close loading modal
-          handleModalClose();
-          
-          // Show error notification
-          showNotification('Invalid Contract', validation.reason || 'Invalid NFT contract', 'error');
-          return false;
+          // Check if the reason is specifically that the contract is not deployed
+          if (validation.reason === 'Contract not deployed at this address') {
+            // Offer to monitor instead
+            setBotStatus('Contract not deployed - monitoring recommended');
+            
+            // Close loading modal
+            handleModalClose();
+            
+            // Show a different notification that offers monitoring
+            showNotification(
+              'Contract Not Deployed', 
+              'This contract is not yet deployed. Would you like to monitor for its deployment?', 
+              'info'
+            );
+            
+            // Add logic to show monitor option
+            setShowMonitorOption(true);
+            
+            return false;
+          } else {
+            // For other errors, show standard error
+            setBotStatus('Error: Invalid contract');
+            
+            // Close loading modal
+            handleModalClose();
+            
+            // Show error notification
+            showNotification('Invalid Contract', validation.reason || 'Invalid NFT contract', 'error');
+            return false;
+          }
         }
         
         return true;
@@ -452,6 +480,9 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
       activationIntervalRef.current = null;
     }
     
+    // Reset monitor option
+    setShowMonitorOption(false);
+    
     // Update state
     setBotActive(false);
     setBotStatus('Bot deactivated');
@@ -471,6 +502,11 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
   useEffect(() => {
     if (contractAddress) setAddress(contractAddress);
   }, [contractAddress]);
+
+  // Reset the monitor option when the input value changes
+  useEffect(() => {
+    setShowMonitorOption(false);
+  }, [inputValue]);
 
   // Update the useEffect that checks network
   useEffect(() => {
@@ -820,6 +856,35 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
                   Deactivate Bot
                 </button>
               </div>
+              
+              {/* Monitor option for non-deployed contracts */}
+              {showMonitorOption && !botActive && (
+                <div className="mt-3 p-3 border border-blue-500/30 rounded-lg bg-blue-900/20">
+                  <p className="text-blue-300 text-sm mb-2">
+                    This contract isn't deployed yet. Would you like to monitor for its deployment?
+                  </p>
+                  <button
+                    onClick={() => {
+                      // Add contract to monitoring
+                      contractMonitorService.monitorContract(
+                        inputValue,
+                        'Unlisted NFT',
+                        '0',
+                        Math.floor(Date.now() / 1000),
+                        5000 // Check every 5 seconds
+                      );
+                      
+                      // Update UI
+                      setShowMonitorOption(false);
+                      setBotStatus('Monitoring for contract deployment...');
+                      showNotification('Monitoring Started', 'Added address to deployment monitor. You will be notified when a contract is deployed.', 'info');
+                    }}
+                    className="w-full py-2 px-4 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Monitor for Deployment
+                  </button>
+                </div>
+              )}
               
               {mintSuccess && (
                 <div className="mt-3 bg-green-500/20 p-3 rounded text-center">

@@ -32,16 +32,26 @@ const MonitoringCard: React.FC<MonitoringCardProps> = ({ contract, onUnmonitor }
   // Get estimated time on mount
   useEffect(() => {
     const getEstimate = async () => {
-      const estimate = await estimateContractDeploymentTime(contract.contractAddress);
-      setEstimatedTime(estimate);
+      try {
+        const estimate = await estimateContractDeploymentTime(contract.contractAddress);
+        setEstimatedTime(estimate);
+        
+        if (estimate === null && contract.status !== 'error') {
+          setTimeRemaining('Unknown');
+        }
+      } catch (error) {
+        console.error('Error getting deployment estimate:', error);
+        setTimeRemaining('Unavailable');
+      }
     };
     
     getEstimate();
-  }, [contract.contractAddress]);
+  }, [contract.contractAddress, contract.status]);
 
   // Update the countdown timer
   useEffect(() => {
-    if (estimatedTime === null) return;
+    // Don't proceed if estimatedTime is null or contract has error status
+    if (estimatedTime === null || contract.status === 'error') return;
     
     const startTime = Date.now() / 1000;
     const endTime = startTime + estimatedTime;
@@ -66,7 +76,7 @@ const MonitoringCard: React.FC<MonitoringCardProps> = ({ contract, onUnmonitor }
     }, 1000);
     
     return () => clearInterval(intervalId);
-  }, [estimatedTime]);
+  }, [estimatedTime, contract.status]);
 
   // Format address for display
   const shortenAddress = (address: string) => {
@@ -91,18 +101,31 @@ const MonitoringCard: React.FC<MonitoringCardProps> = ({ contract, onUnmonitor }
       </div>
       
       <div className="p-4">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-gray-300 text-sm">Deployment Estimate:</span>
-          <span className="text-white font-mono">{timeRemaining}</span>
-        </div>
-        
-        {/* Progress bar */}
-        <div className="h-2 w-full bg-gray-700 rounded-full mb-4">
-          <div 
-            className="h-full bg-blue-500 rounded-full transition-all duration-500"
-            style={{ width: `${progress}%` }}
-          ></div>
-        </div>
+        {contract.status === 'error' ? (
+          <div className="mb-4 p-3 bg-red-500/20 rounded-lg">
+            <p className="text-red-400 text-center font-medium">
+              Error: Contract not deployed at this address
+            </p>
+            <p className="text-gray-400 text-xs text-center mt-1">
+              Please verify the contract address and try again
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-gray-300 text-sm">Deployment Estimate:</span>
+              <span className="text-white font-mono">{timeRemaining}</span>
+            </div>
+            
+            {/* Progress bar */}
+            <div className="h-2 w-full bg-gray-700 rounded-full mb-4">
+              <div 
+                className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+          </>
+        )}
         
         <div className="flex justify-between items-center mb-3">
           <span className="text-gray-300 text-sm">Status:</span>

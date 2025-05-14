@@ -39,16 +39,31 @@ export const isTargetContractDeployed = async (
   contractAddress: string
 ): Promise<boolean> => {
   try {
+    // Validate the address format first
     if (!contractAddress || !ethers.isAddress(contractAddress)) {
-      console.error(`Invalid address: ${contractAddress}`);
-      return false;
+      console.error(`Invalid address format: ${contractAddress}`);
+      throw new Error('Invalid address format');
     }
 
-    const code = await provider.getCode(contractAddress);
-    return code !== '0x' && code !== '';
+    // Add a timeout to prevent hanging on slow network responses
+    const code = await Promise.race([
+      provider.getCode(contractAddress),
+      new Promise<string>((_, reject) => 
+        setTimeout(() => reject(new Error('Network timeout checking contract')), 15000)
+      )
+    ]);
+
+    // Check if there's actual bytecode at the address
+    const isDeployed = code !== '0x' && code !== '';
+    if (!isDeployed) {
+      console.log(`No contract deployed at address: ${contractAddress}`);
+    }
+    
+    return isDeployed;
   } catch (error) {
     console.error(`Error checking contract deployment at ${contractAddress}:`, error);
-    return false;
+    // Re-throw the error so the caller can handle it appropriately
+    throw error;
   }
 };
 
@@ -140,14 +155,24 @@ export const watchMultipleAddresses = (
  * @returns Estimated time in seconds until deployment, or null if unknown
  */
 export const estimateContractDeploymentTime = async (contractAddress: string): Promise<number | null> => {
-  // In a real implementation, this would analyze blockchain trends
-  // and make an educated guess about deployment time
-  // For now, we'll return a random time between 10 minutes and 24 hours
-  const minTime = 10 * 60; // 10 minutes in seconds
-  const maxTime = 24 * 60 * 60; // 24 hours in seconds
-  console.log(contractAddress)
-  
-  return Math.floor(Math.random() * (maxTime - minTime)) + minTime;
+  try {
+    // Validate address format first
+    if (!contractAddress || !ethers.isAddress(contractAddress)) {
+      console.error(`Invalid address format in estimateContractDeploymentTime: ${contractAddress}`);
+      return null;
+    }
+    
+    // In a real implementation, this would analyze blockchain trends
+    // and make an educated guess about deployment time
+    // For now, we'll return a random time between 10 minutes and 24 hours
+    const minTime = 10 * 60; // 10 minutes in seconds
+    const maxTime = 24 * 60 * 60; // 24 hours in seconds
+    
+    return Math.floor(Math.random() * (maxTime - minTime)) + minTime;
+  } catch (error) {
+    console.error(`Error estimating deployment time for ${contractAddress}:`, error);
+    return null;
+  }
 };
 
 /**

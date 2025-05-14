@@ -9,12 +9,14 @@ export interface MonitoredContract {
   status: 'pending' | 'deployed' | 'error';
   lastChecked: number;
   checkInterval: number; // milliseconds
+  autoActivate?: boolean; // Add new flag for auto-activation
 }
 
 class ContractMonitorService {
   private monitoredContracts: Map<string, MonitoredContract> = new Map();
   private monitorIntervals: Map<string, NodeJS.Timeout> = new Map();
   private deploymentCallbacks: Map<string, ((contract: MonitoredContract) => void)[]> = new Map();
+  private autoActivationCallbacks: Map<string, ((contract: MonitoredContract) => void)> = new Map();
   private provider: ethers.BrowserProvider | null = null;
 
   constructor() {
@@ -61,12 +63,21 @@ class ContractMonitorService {
     }
   }
 
+  public setAutoActivationCallback(callback: (contract: MonitoredContract) => void, contractAddress?: string) {
+    if (contractAddress) {
+      this.autoActivationCallbacks.set(contractAddress, callback);
+    } else {
+      this.autoActivationCallbacks.set('global', callback);
+    }
+  }
+
   public async monitorContract(
     contractAddress: string, 
     name: string, 
     mintPrice: string, 
     launchTime: number, 
-    checkInterval = 30000 // Default to 30 seconds
+    checkInterval = 30000, // Default to 30 seconds
+    autoActivate = false  // Add option for auto-activation
   ): Promise<boolean> {
     if (!this.provider) {
       await this.initProvider();
@@ -78,35 +89,66 @@ class ContractMonitorService {
 
     // Check if already monitoring
     if (this.monitoredContracts.has(contractAddress)) {
-      console.log(`Already monitoring contract ${contractAddress}`);
+      // Update auto-activate setting if already monitoring
+      const existingContract = this.monitoredContracts.get(contractAddress)!;
+      existingContract.autoActivate = autoActivate;
+      this.monitoredContracts.set(contractAddress, existingContract);
+      this.saveMonitoredContracts();
+      console.log(`Already monitoring contract ${contractAddress}, updated auto-activation to ${autoActivate}`);
       return true;
     }
 
-    // Check if already deployed
-    const isDeployed = await isTargetContractDeployed(this.provider, contractAddress);
-    
-    const contract: MonitoredContract = {
-      contractAddress,
-      name,
-      mintPrice,
-      launchTime,
-      status: isDeployed ? 'deployed' : 'pending',
-      lastChecked: Date.now(),
-      checkInterval
-    };
+    try {
+      // Check if already deployed
+      const isDeployed = await isTargetContractDeployed(this.provider, contractAddress);
+      
+      const contract: MonitoredContract = {
+        contractAddress,
+        name,
+        mintPrice,
+        launchTime,
+        status: isDeployed ? 'deployed' : 'pending',
+        lastChecked: Date.now(),
+        checkInterval,
+        autoActivate
+      };
 
-    this.monitoredContracts.set(contractAddress, contract);
-    this.saveMonitoredContracts();
+      this.monitoredContracts.set(contractAddress, contract);
+      this.saveMonitoredContracts();
 
-    // If not deployed yet, start monitoring
-    if (!isDeployed) {
-      this.startMonitoring(contractAddress);
+      // If not deployed yet, start monitoring
+      if (!isDeployed) {
+        this.startMonitoring(contractAddress);
+        return true;
+      }
+
+      // If already deployed and auto-activate is enabled, trigger auto-activation
+      if (isDeployed && autoActivate) {
+        this.triggerAutoActivation(contract);
+      }
+
+      // If already deployed, trigger any callbacks immediately
+      this.notifyDeployment(contract);
+      return true;
+    } catch (error) {
+      console.error(`Error monitoring contract ${contractAddress}:`, error);
+
+      // Create contract entry with error status
+      const contract: MonitoredContract = {
+        contractAddress,
+        name,
+        mintPrice,
+        launchTime,
+        status: 'error',
+        lastChecked: Date.now(),
+        checkInterval,
+        autoActivate
+      };
+
+      this.monitoredContracts.set(contractAddress, contract);
+      this.saveMonitoredContracts();
       return true;
     }
-
-    // If already deployed, trigger any callbacks immediately
-    this.notifyDeployment(contract);
-    return true;
   }
 
   private startMonitoring(contractAddress: string) {
@@ -134,6 +176,9 @@ class ContractMonitorService {
       await this.initProvider();
       if (!this.provider) {
         console.error('Provider not available for checking deployment');
+        contract.status = 'error';
+        this.monitoredContracts.set(contractAddress, contract);
+        this.saveMonitoredContracts();
         return;
       }
     }
@@ -162,6 +207,12 @@ class ContractMonitorService {
       contract.status = 'error';
       this.monitoredContracts.set(contractAddress, contract);
       this.saveMonitoredContracts();
+      
+      // Stop monitoring on error
+      if (this.monitorIntervals.has(contractAddress)) {
+        clearInterval(this.monitorIntervals.get(contractAddress)!);
+        this.monitorIntervals.delete(contractAddress);
+      }
     }
   }
 
@@ -213,6 +264,28 @@ class ContractMonitorService {
     this.monitoredContracts.forEach((_, address) => {
       this.checkContractDeployment(address);
     });
+  }
+
+  private triggerAutoActivation(contract: MonitoredContract) {
+    // Try contract-specific callback first
+    const specificCallback = this.autoActivationCallbacks.get(contract.contractAddress);
+    if (specificCallback) {
+      try {
+        specificCallback(contract);
+      } catch (error) {
+        console.error('Error in contract-specific auto-activation callback:', error);
+      }
+    }
+
+    // Then try global callback
+    const globalCallback = this.autoActivationCallbacks.get('global');
+    if (globalCallback) {
+      try {
+        globalCallback(contract);
+      } catch (error) {
+        console.error('Error in global auto-activation callback:', error);
+      }
+    }
   }
 }
 
