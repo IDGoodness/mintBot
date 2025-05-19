@@ -5,6 +5,8 @@ import NetworkSwitcher from './NetworkSwitcher';
 import { TransactionService } from '../services/TransactionService';
 import ProcessWarning from './ProcessWarning';
 import contractMonitorService from '../services/ContractMonitorService';
+import useMainnetNFTSniper from '../hooks/useMainnetNFTSniper';
+import { SUPPORTED_NETWORKS } from '../config/networks';
 
 // Import all NFT fallback images
 import nft1 from "../assets/nft1.png";
@@ -13,7 +15,6 @@ import nft3 from "../assets/nft3.png";
 import nft4 from "../assets/nft4.png";
 import nft5 from "../assets/nft5.png";
 
-import useMainnetNFTSniper from '../hooks/useMainnetNFTSniper';
 import { validateNFTContract, getNFTContractInfo } from '../utils/contractUtils';
 import { extractContractAddress, getMarketplaceNFTData } from '../utils/marketplaceUtils';
 import EnhancedNFTCard from './EnhancedNFTCard';
@@ -189,8 +190,13 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
       
       console.log('Network:', network.name, network.chainId.toString());
       
-      if (network.chainId !== 1n) {
-        throw new Error('Please connect to Ethereum Mainnet');
+      // Allow any supported network now
+      const isSupportedNetwork = Object.values(SUPPORTED_NETWORKS).some(
+        (n: { chainId: number }) => BigInt(n.chainId) === network.chainId
+      );
+      
+      if (!isSupportedNetwork) {
+        throw new Error('Please connect to a supported network');
       }
   
       // 2. Display checking message
@@ -217,7 +223,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
             marketplaceData.name,
             marketplaceData.mintPrice?.toString() || '0',
             marketplaceData.launchTime,
-            10000 // Check every 10 seconds
+            5000, // Check every 5 seconds
+            true  // Enable auto-activation
           );
           
           // Add notification for monitoring
@@ -253,7 +260,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
               'Unlisted NFT',
               '0',
               Math.floor(Date.now() / 1000), // Current time
-              10000 // Check every 10 seconds
+              5000, // Check every 5 seconds
+              true  // Enable auto-activation
             );
             
             // Create a basic nft data object
@@ -261,13 +269,20 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
               name: 'Unlisted NFT Collection',
               symbol: 'NFT',
               image: fallbackImages[Math.floor(Math.random() * fallbackImages.length)],
-              description: 'This NFT contract has not been deployed yet. The bot will monitor for deployment.',
+              description: 'This NFT contract has not been deployed yet. The bot will monitor for deployment and automatically snipe when it launches.',
               contract: contract,
               floorPrice: 0,
               totalSupply: 0,
               launchTime: 0,
               status: 'upcoming'
             };
+            
+            // Show special notification for unlisted NFTs
+            showNotification(
+              'Monitoring Unlisted NFT', 
+              'This contract is not yet deployed. The bot will automatically monitor and snipe when it launches.', 
+              'info'
+            );
           } else {
             // Contract exists on-chain
             const validation = await validateNFTContract(contract, provider);
@@ -318,6 +333,13 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
         // Set appropriate status based on NFT state
         if (nftData.status === 'upcoming') {
           setBotStatus('Upcoming NFT found! Monitoring for deployment.');
+          
+          // Show special notification for upcoming NFTs
+          showNotification(
+            'Monitoring Upcoming NFT', 
+            'The bot will automatically monitor and snipe this NFT when it launches.', 
+            'info'
+          );
         } else if (contractOnChainValid) {
           setBotStatus('NFT contract verified on-chain.');
         } else {

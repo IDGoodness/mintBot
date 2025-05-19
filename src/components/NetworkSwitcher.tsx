@@ -1,86 +1,18 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
+import { SUPPORTED_NETWORKS } from '../config/networks';
 
 interface Network {
-  chainId: string;
+  chainId: number;
   name: string;
-  rpcUrl: string;
+  rpcUrls: string[];
   blockExplorer: string;
-  currency: {
+  nativeCurrency: {
     name: string;
     symbol: string;
     decimals: number;
   };
 }
-
-const SUPPORTED_NETWORKS: Network[] = [
-  {
-    chainId: '0x1',
-    name: 'Ethereum',
-    rpcUrl: 'https://mainnet.infura.io/v3/',
-    blockExplorer: 'https://etherscan.io',
-    currency: {
-      name: 'Ethereum',
-      symbol: 'ETH',
-      decimals: 18
-    }
-  },
-  {
-    chainId: '0x2105',
-    name: 'Base',
-    rpcUrl: 'https://mainnet.base.org',
-    blockExplorer: 'https://basescan.org',
-    currency: {
-      name: 'Ethereum',
-      symbol: 'ETH',
-      decimals: 18
-    }
-  },
-  {
-    chainId: '0x89',
-    name: 'Polygon',
-    rpcUrl: 'https://polygon-rpc.com',
-    blockExplorer: 'https://polygonscan.com',
-    currency: {
-      name: 'Matic',
-      symbol: 'MATIC',
-      decimals: 18
-    }
-  },
-  {
-    chainId: '0x38',
-    name: 'BSC',
-    rpcUrl: 'https://bsc-dataseed.binance.org',
-    blockExplorer: 'https://bscscan.com',
-    currency: {
-      name: 'BNB',
-      symbol: 'BNB',
-      decimals: 18
-    }
-  },
-  {
-    chainId: '0xA',
-    name: 'Optimism',
-    rpcUrl: 'https://mainnet.optimism.io',
-    blockExplorer: 'https://optimistic.etherscan.io',
-    currency: {
-      name: 'Ethereum',
-      symbol: 'ETH',
-      decimals: 18
-    }
-  },
-  {
-    chainId: '0xA4B1',
-    name: 'Arbitrum',
-    rpcUrl: 'https://arb1.arbitrum.io/rpc',
-    blockExplorer: 'https://arbiscan.io',
-    currency: {
-      name: 'Ethereum',
-      symbol: 'ETH',
-      decimals: 18
-    }
-  }
-];
 
 interface NetworkSwitcherProps {
   onNetworkChange: (network: Network) => void;
@@ -100,7 +32,7 @@ const NetworkSwitcher: React.FC<NetworkSwitcherProps> = ({ onNetworkChange, curr
         // Try to switch to the network
         await window.ethereum.request({
           method: 'wallet_switchEthereumChain',
-          params: [{ chainId: network.chainId }],
+          params: [{ chainId: `0x${network.chainId.toString(16)}` }],
         });
       } catch (switchError: any) {
         // This error code indicates that the chain has not been added to MetaMask
@@ -108,10 +40,10 @@ const NetworkSwitcher: React.FC<NetworkSwitcherProps> = ({ onNetworkChange, curr
           await window.ethereum.request({
             method: 'wallet_addEthereumChain',
             params: [{
-              chainId: network.chainId,
+              chainId: `0x${network.chainId.toString(16)}`,
               chainName: network.name,
-              nativeCurrency: network.currency,
-              rpcUrls: [network.rpcUrl],
+              nativeCurrency: network.nativeCurrency,
+              rpcUrls: network.rpcUrls,
               blockExplorerUrls: [network.blockExplorer]
             }],
           });
@@ -153,10 +85,10 @@ const NetworkSwitcher: React.FC<NetworkSwitcherProps> = ({ onNetworkChange, curr
           exit={{ opacity: 0, y: -10 }}
           className="absolute top-full left-0 mt-2 w-48 bg-[#1a1f2e] rounded-lg shadow-xl border border-white/10 overflow-hidden z-50"
         >
-          {SUPPORTED_NETWORKS.map((network) => (
+          {Object.values(SUPPORTED_NETWORKS).map((network) => (
             <button
               key={network.chainId}
-              onClick={() => switchNetwork(network)}
+              onClick={() => switchNetwork(network as any)}
               className={`w-full px-4 py-3 text-left hover:bg-white/5 transition-colors flex items-center space-x-2 ${
                 currentNetwork?.chainId === network.chainId ? 'bg-white/10' : ''
               }`}
