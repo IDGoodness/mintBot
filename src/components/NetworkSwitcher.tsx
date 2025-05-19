@@ -52,11 +52,14 @@ const NetworkSwitcher: React.FC<NetworkSwitcherProps> = ({ onNetworkChange, curr
         }
       }
 
-      onNetworkChange(network);
-      setIsOpen(false);
+      // Wait for the network to actually change before updating UI
+      setTimeout(() => {
+        onNetworkChange(network);
+        setIsOpen(false);
+      }, 500);
     } catch (error) {
       console.error('Error switching network:', error);
-      // You might want to show an error notification here
+      alert(`Failed to switch to ${network.name}. Please try again or switch manually in your wallet.`);
     }
   };
 

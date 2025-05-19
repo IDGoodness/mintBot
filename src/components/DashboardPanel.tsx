@@ -147,24 +147,6 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
 
   const shortenAddress = (addr: string) => addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '';
 
-  const switchToMainnet = async () => {
-    if (!window.ethereum) {
-      alert("Please install MetaMask to connect to Ethereum Mainnet");
-      return;
-    }
-
-    try {
-      // Request switch to Ethereum Mainnet
-      await window.ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: '0x1' }] // Mainnet chainId
-      });
-    } catch (error: any) {
-      console.error("Error switching to Mainnet:", error);
-      setBotStatus('Error switching to Mainnet');
-    }
-  };
-
   const fetchNFTDetails = async () => {
     // Clean up and normalize the input first
     const rawInput = inputValue.trim();
@@ -196,7 +178,8 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
       );
       
       if (!isSupportedNetwork) {
-        throw new Error('Please connect to a supported network');
+        const supportedNetworkNames = Object.values(SUPPORTED_NETWORKS).map(n => n.name).join(', ');
+        throw new Error(`Please connect to a supported network (${supportedNetworkNames})`);
       }
   
       // 2. Display checking message
@@ -559,17 +542,20 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
         const provider = new ethers.BrowserProvider(window.ethereum);
         const network = await provider.getNetwork();
         
-        // Update currentNetwork state
-        setCurrentNetwork(network);
+        // Update currentNetwork state with proper network info from our config
+        const chainId = Number(network.chainId);
+        const networkInfo = Object.values(SUPPORTED_NETWORKS).find(n => n.chainId === chainId);
         
-        if (network.chainId !== 1n) { // Ethereum Mainnet
-          setBotStatus('Please connect to Ethereum Mainnet');
-          setNetworkStatus('error');
-          // Prompt to switch
-          await switchToMainnet();
-        } else {
-          setBotStatus('Connected to Ethereum Mainnet');
+        if (networkInfo) {
+          setCurrentNetwork({
+            ...networkInfo,
+            chainId: chainId
+          });
+          setBotStatus(`Connected to ${networkInfo.name}`);
           setNetworkStatus('connected');
+        } else {
+          setBotStatus('Unsupported network. Please switch to a supported network.');
+          setNetworkStatus('error');
         }
       } catch (error) {
         console.error("Error checking network:", error);
@@ -755,50 +741,75 @@ const DashboardPanel: React.FC<DashboardPanelProps> = ({
               <div className="col-span-full text-center p-6 border border-red-500/20 rounded-lg bg-black/20">
                 <p className="text-red-400 mb-2">{nftError}</p>
                 
-                {nftError.includes("connect to Ethereum Mainnet") && (
-                  <button
-                    onClick={switchToMainnet}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 mt-2"
-                  >
-                    Switch to Ethereum Mainnet
-                  </button>
+                {nftError.includes("connect to a supported network") && (
+                  <div className="mt-3">
+                    <p className="text-amber-400 mb-2">Please switch to one of our supported networks:</p>
+                    <div className="flex flex-wrap justify-center gap-2 mt-2">
+                      {Object.values(SUPPORTED_NETWORKS).map(network => (
+                        <button
+                          key={network.chainId}
+                          onClick={async () => {
+                            try {
+                              await window.ethereum.request({
+                                method: 'wallet_switchEthereumChain',
+                                params: [{ chainId: `0x${network.chainId.toString(16)}` }],
+                              });
+                            } catch (switchError: any) {
+                              if (switchError.code === 4902) {
+                                await window.ethereum.request({
+                                  method: 'wallet_addEthereumChain',
+                                  params: [{
+                                    chainId: `0x${network.chainId.toString(16)}`,
+                                    chainName: network.name,
+                                    nativeCurrency: network.nativeCurrency,
+                                    rpcUrls: network.rpcUrls,
+                                    blockExplorerUrls: [network.blockExplorer]
+                                  }],
+                                });
+                              }
+                            }
+                          }}
+                          className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                        >
+                          {network.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
                 
                 {nftError.includes("No contract deployed at this address") && (
-                  <div className="mt-4">
-                    <p className="text-amber-400 mb-2">This address does not have a contract deployed yet.</p>
-                    <button
-                      onClick={() => {
-                        if (inputValue && ethers.isAddress(inputValue)) {
-                          // Add to monitoring with auto-activation enabled
-                          contractMonitorService.monitorContract(
-                            inputValue,
-                            'Unlisted NFT',
-                            '0',
-                            Math.floor(Date.now() / 1000),
-                            5000, // Check every 5 seconds
-                            true  // Enable auto-activation
-                          );
-                          
-                          // Update UI
-                          setBotStatus('Monitoring for contract deployment with auto-activation enabled...');
-                          showNotification(
-                            'Auto-Monitoring Started', 
-                            'Added address to deployment monitor. Bot will automatically activate when the contract is deployed.', 
-                            'info'
-                          );
-                          
-                          // Clear error
-                          setNftError(null);
-                        } else {
-                          showNotification('Invalid Address', 'Please enter a valid Ethereum address', 'error');
-                        }
-                      }}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-                    >
-                      Monitor & Auto-Activate
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => {
+                      if (inputValue && ethers.isAddress(inputValue)) {
+                        // Add to monitoring with auto-activation enabled
+                        contractMonitorService.monitorContract(
+                          inputValue,
+                          'Unlisted NFT',
+                          '0',
+                          Math.floor(Date.now() / 1000),
+                          5000, // Check every 5 seconds
+                          true  // Enable auto-activation
+                        );
+                        
+                        // Update UI
+                        setBotStatus('Monitoring for contract deployment with auto-activation enabled...');
+                        showNotification(
+                          'Auto-Monitoring Started', 
+                          'Added address to deployment monitor. Bot will automatically activate when the contract is deployed.', 
+                          'info'
+                        );
+                        
+                        // Clear error
+                        setNftError(null);
+                      } else {
+                        showNotification('Invalid Address', 'Please enter a valid Ethereum address', 'error');
+                      }
+                    }}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                  >
+                    Monitor & Auto-Activate
+                  </button>
                 )}
               </div>
             ) : nfts.length > 0 ? (
