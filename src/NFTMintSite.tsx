@@ -24,14 +24,12 @@ const NFTMintSite = () => {
   const [success, setSuccess] = useState('');
   const [mintTxHash, setMintTxHash] = useState('');
   
-  // Initialize MintifyService when provider and signer are available
   useEffect(() => {
     if (provider && signer) {
       mintifyService.initialize(provider, signer);
     }
   }, [provider, signer]);
   
-  // Reset state when chain changes
   useEffect(() => {
     resetForm();
   }, [chain]);
@@ -48,7 +46,6 @@ const NFTMintSite = () => {
     setMintTxHash('');
   };
   
-  // Validate NFT contract
   const validateContract = async () => {
     if (!contractAddress) {
       setError('Please enter a contract address');
@@ -66,7 +63,6 @@ const NFTMintSite = () => {
     setMintFunctions([]);
     
     try {
-      // Validate the contract
       const validationResult = await mintifyService.validateContract(contractAddress);
       
       if (!validationResult.isValid) {
@@ -75,10 +71,8 @@ const NFTMintSite = () => {
         return;
       }
       
-      // Get mint functions
       const availableMintFunctions = await mintifyService.getMintFunctions(contractAddress);
       
-      // Get mint price
       const priceResult = await mintifyService.getPrice(contractAddress);
       
       setContractInfo({
@@ -101,7 +95,6 @@ const NFTMintSite = () => {
     }
   };
   
-  // Format price for display
   const formatPrice = (priceWei) => {
     if (!priceWei || priceWei === '0') {
       return 'Free mint or unknown price';
@@ -115,7 +108,6 @@ const NFTMintSite = () => {
     }
   };
   
-  // Calculate total price based on quantity
   const calculateTotalPrice = () => {
     if (useCustomValue && customValue) {
       try {
@@ -138,7 +130,6 @@ const NFTMintSite = () => {
     return '0';
   };
   
-  // Mint NFT
   const mintNFT = async () => {
     if (!contractAddress || !mintifyService.isInitialized()) {
       setError('Contract address invalid or service not initialized');
@@ -156,7 +147,6 @@ const NFTMintSite = () => {
         gasBoost: gasBoost > 0 ? gasBoost : undefined
       };
       
-      // Set value for transaction
       if (useCustomValue && customValue) {
         try {
           const valueWei = ethers.parseEther(customValue);
@@ -173,7 +163,6 @@ const NFTMintSite = () => {
         options.value = totalPriceWei.toString();
       }
       
-      // Mint the NFT
       const result = await mintifyService.mint(contractAddress, options);
       
       if (result.success) {
@@ -196,7 +185,7 @@ const NFTMintSite = () => {
       <h2 className="text-2xl font-bold mb-6">NFT Minting Interface</h2>
       
       <div className="bg-white p-6 rounded-lg shadow-md">
-        {/* Contract Address Input */}
+        { }
         <div className="mb-6">
           <label className="block text-gray-700 mb-2">NFT Contract Address</label>
           <div className="flex space-x-2">
@@ -220,14 +209,14 @@ const NFTMintSite = () => {
           )}
         </div>
         
-        {/* Error Display */}
+        { }
         {error && (
           <div className="p-3 mb-4 bg-red-100 border border-red-400 text-red-700 rounded">
             {error}
           </div>
         )}
         
-        {/* Success Display */}
+        { }
         {success && (
           <div className="p-3 mb-4 bg-green-100 border border-green-400 text-green-700 rounded">
             {success}
@@ -246,7 +235,7 @@ const NFTMintSite = () => {
           </div>
         )}
         
-        {/* Contract Info Display */}
+        { }
         {contractInfo && (
           <div className="mb-6 p-4 bg-gray-50 rounded border">
             <h3 className="font-bold text-lg">{contractInfo.name}</h3>
@@ -264,7 +253,7 @@ const NFTMintSite = () => {
           </div>
         )}
         
-        {/* Minting Options */}
+        { }
         {contractInfo && mintFunctions.length > 0 && (
           <>
             <div className="mb-4">
